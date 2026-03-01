@@ -1,11 +1,10 @@
 use std::{
-    collections::HashMap,
     io,
     ops::Deref,
     sync::{Arc, Weak},
 };
 
-use actix_web::{ResponseError, http::StatusCode, web::Bytes};
+use actix_web::{ResponseError, http::StatusCode};
 use common::config::Config;
 use hex::FromHexError;
 use moonlight_common::{
@@ -17,12 +16,11 @@ use moonlight_common::{
 };
 use openssl::error::ErrorStack;
 use thiserror::Error;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::app::{
-    host::{AppId, HostId},
-    storage::{Storage, StorageHostAdd, StorageHostCache, create_storage},
+    host::HostId,
+    storage::{Storage, StorageHostAdd, create_storage},
 };
 
 pub mod host;
@@ -87,7 +85,6 @@ impl AppRef {
 struct AppInner {
     config: Config,
     storage: Arc<dyn Storage + Send + Sync>,
-    app_image_cache: RwLock<HashMap<(HostId, AppId), Bytes>>,
 }
 
 pub type MoonlightClient = ReqwestClient;
@@ -101,7 +98,6 @@ impl App {
         let app = AppInner {
             storage: create_storage(config.data_storage.clone()).await?,
             config,
-            app_image_cache: Default::default(),
         };
 
         Ok(Self {
@@ -149,7 +145,7 @@ impl App {
     pub async fn add_host(&self, address: String, http_port: u16) -> Result<host::Host, AppError> {
         let unique_id = self.config().moonlight.pair_device_name.clone();
         let mut client = MoonlightClient::with_defaults().map_err(ApiError::RequestClient)?;
-        let info = match moonlight_common::network::host_info(
+        let _info = match moonlight_common::network::host_info(
             &mut client,
             false,
             &format!("{}:{}", address, http_port),
@@ -174,10 +170,6 @@ impl App {
                 address,
                 http_port,
                 pair_info: None,
-                cache: StorageHostCache {
-                    name: info.host_name,
-                    mac: info.mac,
-                },
             })
             .await?;
 

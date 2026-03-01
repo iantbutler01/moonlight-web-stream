@@ -18,8 +18,7 @@ use crate::app::{
     AppError,
     host::HostId,
     storage::{
-        Storage, StorageHost, StorageHostAdd, StorageHostCache, StorageHostModify,
-        StorageHostPairInfo,
+        Storage, StorageHost, StorageHostAdd, StorageHostModify, StorageHostPairInfo,
         json::versions::{Json, V2, V2Host, V2HostCache, V2HostPairInfo, migrate_to_latest},
     },
 };
@@ -146,10 +145,6 @@ fn host_from_json(host_id: HostId, host: &V2Host) -> StorageHost {
             client_private_key: pair_info.client_private_key,
             server_certificate: pair_info.server_certificate,
         }),
-        cache: StorageHostCache {
-            name: host.cache.name.clone(),
-            mac: host.cache.mac,
-        },
     }
 }
 
@@ -165,8 +160,8 @@ impl Storage for JsonStorage {
                 server_certificate: pair_info.server_certificate,
             }),
             cache: V2HostCache {
-                name: host.cache.name,
-                mac: host.cache.mac,
+                name: "local-sunshine".to_string(),
+                mac: None,
             },
         };
 
@@ -194,10 +189,6 @@ impl Storage for JsonStorage {
                 client_certificate: pair_info.client_certificate,
                 server_certificate: pair_info.server_certificate,
             }),
-            cache: StorageHostCache {
-                name: host.cache.name,
-                mac: host.cache.mac,
-            },
         })
     }
 
@@ -223,13 +214,6 @@ impl Storage for JsonStorage {
                 server_certificate: pair_info.server_certificate,
             });
         }
-        if let Some(new_name) = modify.cache_name {
-            host.cache.name = new_name;
-        }
-        if let Some(new_mac) = modify.cache_mac {
-            host.cache.mac = new_mac;
-        }
-
         drop(host);
         drop(hosts);
         self.force_write();
@@ -241,17 +225,6 @@ impl Storage for JsonStorage {
         let host = hosts.get(&host_id.0).ok_or(AppError::HostNotFound)?;
         let host = host.read().await;
         Ok(host_from_json(host_id, &host))
-    }
-
-    async fn remove_host(&self, host_id: HostId) -> Result<(), AppError> {
-        let mut hosts = self.hosts.write().await;
-        let result = match hosts.remove(&host_id.0) {
-            None => Err(AppError::HostNotFound),
-            Some(_) => Ok(()),
-        };
-        drop(hosts);
-        self.force_write();
-        result
     }
 
     async fn list_hosts(&self) -> Result<Vec<(HostId, Option<StorageHost>)>, AppError> {
