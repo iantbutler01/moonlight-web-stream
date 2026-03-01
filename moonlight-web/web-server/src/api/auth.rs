@@ -1,16 +1,10 @@
 use actix_web::{
-    Error, FromRequest, HttpRequest, HttpResponse,
-    body::MessageBody,
-    cookie::{Cookie, Expiration, SameSite, time::OffsetDateTime},
-    dev::{Payload, ServiceRequest, ServiceResponse},
-    get,
-    middleware::Next,
-    post,
-    web::{Data, Json},
+    FromRequest, HttpRequest,
+    dev::Payload,
+    web::Data,
 };
-use common::api_bindings::PostLoginRequest;
 use futures::future::{Ready, ready};
-use std::{pin::Pin, time::Duration};
+use std::pin::Pin;
 
 use crate::app::{
     App, AppError,
@@ -107,96 +101,4 @@ impl FromRequest for Admin {
             user.into_admin().await
         })
     }
-}
-
-#[post("/login")]
-async fn login(
-    app: Data<App>,
-    Json(request): Json<PostLoginRequest>,
-) -> Result<HttpResponse, Error> {
-    let user = if app.config().web_server.first_login_create_admin {
-        match app
-            .try_add_first_login(request.name.clone(), request.password.clone())
-            .await
-        {
-            Ok(user) => user,
-            Err(AppError::FirstUserAlreadyExists) => {
-                app.user_by_auth(UserAuth::UserPassword {
-                    username: request.name,
-                    password: request.password,
-                })
-                .await?
-            }
-            Err(err) => return Err(err.into()),
-        }
-    } else {
-        app.user_by_auth(UserAuth::UserPassword {
-            username: request.name,
-            password: request.password,
-        })
-        .await?
-    };
-
-    let session_expiration = app.config().web_server.session_cookie_expiration;
-
-    let session = user.new_session(session_expiration).await?;
-    let mut session_bytes = [0; _];
-    let session_str = session.encode(&mut session_bytes);
-
-    Ok(HttpResponse::Ok()
-        .cookie(build_cookie(&app, session_expiration, session_str))
-        .finish())
-}
-
-#[post("/logout")]
-async fn logout(app: Data<App>, auth: UserAuth, req: HttpRequest) -> Result<HttpResponse, Error> {
-    let session = match auth {
-        UserAuth::Session(session) => session,
-        _ => return Ok(HttpResponse::BadRequest().finish()),
-    };
-
-    app.delete_session(session).await?;
-
-    let mut response = HttpResponse::Ok().finish();
-
-    if req.cookie(COOKIE_SESSION_TOKEN_NAME).is_some() {
-        response.add_removal_cookie(&build_cookie(&app, Duration::ZERO, ""))?;
-    }
-
-    Ok(response)
-}
-
-pub async fn auth_middleware(
-    req: ServiceRequest,
-    next: Next<impl MessageBody>,
-) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    let Some(app) = req.app_data::<Data<App>>().cloned() else {
-        return Err(AppError::AppDestroyed.into());
-    };
-
-    let mut response = next.call(req).await?;
-    if let Some(err) = response.response().error()
-        && let Some(AppError::SessionTokenNotFound) = err.as_error::<AppError>()
-    {
-        response
-            .response_mut()
-            .add_removal_cookie(&build_cookie(&app, Duration::ZERO, ""))?;
-    }
-
-    Ok(response)
-}
-
-pub fn build_cookie<'a>(app: &'a App, expiration: Duration, session_str: &'a str) -> Cookie<'a> {
-    Cookie::build(COOKIE_SESSION_TOKEN_NAME, session_str)
-        .path(&app.config().web_server.url_path_prefix)
-        .same_site(SameSite::Strict)
-        .http_only(true) // not accessible via js
-        .secure(app.config().web_server.session_cookie_secure)
-        .expires(Expiration::DateTime(OffsetDateTime::now_utc() + expiration))
-        .finish()
-}
-
-#[get("/authenticate")]
-async fn authenticate(_user: AuthenticatedUser) -> HttpResponse {
-    HttpResponse::Ok().finish()
 }

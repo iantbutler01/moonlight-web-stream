@@ -35,6 +35,7 @@ async function startApp() {
     }
     const hostId = Number.parseInt(hostIdStr)
     const appId = Number.parseInt(appIdStr)
+    const minimalMode = queryParams.get("minimal") === "1"
 
     // event propagation on overlays
     const sidebarRoot = getSidebarRoot()
@@ -48,7 +49,7 @@ async function startApp() {
     }
 
     // Start and Mount App
-    const app = new ViewerApp(api, hostId, appId)
+    const app = new ViewerApp(api, hostId, appId, minimalMode)
     app.mount(rootElement);
 
     (window as any)["app"] = app
@@ -81,13 +82,23 @@ class ViewerApp implements Component {
     private previousMouseMode: MouseMode
     private toggleFullscreenWithKeybind: boolean
     private hasShownFullscreenEscapeWarning = false
+    private minimalMode: boolean
+    private controlsAttached = false
+    private takeoverOverlay: HTMLDivElement | null = null
 
-    constructor(api: Api, hostId: number, appId: number) {
+    constructor(api: Api, hostId: number, appId: number, minimalMode: boolean) {
         this.api = api
+        this.minimalMode = minimalMode
 
         // Configure sidebar
         this.sidebar = new ViewerSidebar(this)
         setSidebar(this.sidebar)
+        if (this.minimalMode) {
+            const sidebarRoot = getSidebarRoot()
+            if (sidebarRoot) {
+                sidebarRoot.style.display = "none"
+            }
+        }
 
         // Configure stats element
         this.statsDiv.hidden = true
@@ -119,7 +130,19 @@ class ViewerApp implements Component {
 
         this.settings = settings
 
-        // Configure input
+        if (this.minimalMode) {
+            this.mountTakeoverOverlay()
+        } else {
+            this.attachControls()
+        }
+    }
+
+    private attachControls() {
+        if (this.controlsAttached) {
+            return
+        }
+        this.controlsAttached = true
+
         this.addListeners(document)
         this.addListeners(document.getElementById("input") as HTMLDivElement)
 
@@ -137,12 +160,45 @@ class ViewerApp implements Component {
 
         window.addEventListener("gamepadconnected", this.onGamepadConnect.bind(this))
         window.addEventListener("gamepaddisconnected", this.onGamepadDisconnect.bind(this))
-        // Connect all gamepads
         for (const gamepad of navigator.getGamepads()) {
             if (gamepad != null) {
                 this.onGamepadAdd(gamepad)
             }
         }
+        this.focusInput()
+    }
+
+    private mountTakeoverOverlay() {
+        const overlay = document.createElement("div")
+        overlay.style.position = "fixed"
+        overlay.style.inset = "0"
+        overlay.style.display = "flex"
+        overlay.style.alignItems = "center"
+        overlay.style.justifyContent = "center"
+        overlay.style.background = "rgba(0, 0, 0, 0.2)"
+        overlay.style.backdropFilter = "blur(2px)"
+        overlay.style.zIndex = "1200"
+
+        const button = document.createElement("button")
+        button.textContent = "Take over"
+        button.style.padding = "12px 20px"
+        button.style.borderRadius = "10px"
+        button.style.border = "1px solid rgba(255,255,255,0.4)"
+        button.style.background = "rgba(20, 20, 20, 0.75)"
+        button.style.color = "white"
+        button.style.fontSize = "15px"
+        button.style.cursor = "pointer"
+        button.addEventListener("click", async () => {
+            this.attachControls()
+            this.takeoverOverlay?.remove()
+            this.takeoverOverlay = null
+            await this.requestFullscreen().catch(() => null)
+            await this.requestPointerLock().catch(() => null)
+        })
+
+        overlay.appendChild(button)
+        this.takeoverOverlay = overlay
+        this.div.appendChild(overlay)
     }
     private addListeners(element: GlobalEventHandlers) {
         element.addEventListener("keydown", this.onKeyDown.bind(this), { passive: false })

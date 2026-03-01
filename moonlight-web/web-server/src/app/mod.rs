@@ -262,6 +262,23 @@ impl App {
                     };
 
                     user.authenticate(&UserAuth::None).await
+                } else if let Some(name) = self.config().web_server.anonymous_user_name.clone() {
+                    let user = match self.user_by_name(&name).await {
+                        Ok(user) => user,
+                        Err(AppError::UserNotFound) => {
+                            return self
+                                .add_user_no_auth(StorageUserAdd {
+                                    role: Role::User,
+                                    name: name.clone(),
+                                    password: None,
+                                    client_unique_id: name,
+                                })
+                                .await;
+                        }
+                        Err(err) => return Err(err),
+                    };
+
+                    Ok(AuthenticatedUser { inner: user })
                 } else {
                     Err(AppError::Unauthorized)
                 }

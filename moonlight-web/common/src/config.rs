@@ -241,6 +241,8 @@ pub struct WebServerConfig {
     pub first_login_create_admin: bool,
     pub first_login_assign_global_hosts: bool,
     pub default_user_id: Option<u32>,
+    #[serde(default = "default_anonymous_user_name")]
+    pub anonymous_user_name: Option<String>,
     pub forwarded_header: Option<ForwardedHeaders>,
 }
 
@@ -261,6 +263,7 @@ impl Default for WebServerConfig {
             first_login_create_admin: true,
             first_login_assign_global_hosts: true,
             default_user_id: None,
+            anonymous_user_name: default_anonymous_user_name(),
             forwarded_header: None,
         }
     }
@@ -276,6 +279,10 @@ fn default_session_cookie_expiration() -> Duration {
     const DAY_SECONDS: u64 = 24 * 60 * 60;
 
     Duration::from_secs(DAY_SECONDS)
+}
+
+fn default_anonymous_user_name() -> Option<String> {
+    Some("viewer".to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

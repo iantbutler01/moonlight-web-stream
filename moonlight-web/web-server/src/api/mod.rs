@@ -3,7 +3,6 @@ use actix_web::{
     HttpResponse, delete,
     dev::HttpServiceFactory,
     get,
-    middleware::from_fn,
     patch, post, services,
     web::{self, Data, Json, Query},
 };
@@ -14,11 +13,7 @@ use tokio::spawn;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    api::{
-        admin::{add_user, delete_user, list_users, patch_user},
-        auth::auth_middleware,
-        response_streaming::StreamedResponse,
-    },
+    api::response_streaming::StreamedResponse,
     app::{
         App, AppError,
         host::{AppId, HostId},
@@ -27,49 +22,15 @@ use crate::{
     },
 };
 use common::api_bindings::{
-    self, DeleteHostQuery, DetailedUser, GetAppImageQuery, GetAppsQuery, GetAppsResponse,
-    GetHostQuery, GetHostResponse, GetHostsResponse, GetUserQuery, PatchHostRequest,
-    PostHostRequest, PostHostResponse, PostPairRequest, PostPairResponse1, PostPairResponse2,
-    PostWakeUpRequest, UndetailedHost,
+    self, DeleteHostQuery, GetAppImageQuery, GetAppsQuery, GetAppsResponse, GetHostQuery,
+    GetHostResponse, GetHostsResponse, PatchHostRequest, PostHostRequest, PostHostResponse,
+    PostPairRequest, PostPairResponse1, PostPairResponse2, PostWakeUpRequest, UndetailedHost,
 };
 
-pub mod admin;
 pub mod auth;
 pub mod stream;
 
 pub mod response_streaming;
-
-#[get("/user")]
-async fn get_user(
-    app: Data<App>,
-    mut user: AuthenticatedUser,
-    Query(query): Query<GetUserQuery>,
-) -> Result<Json<DetailedUser>, AppError> {
-    match (query.name, query.user_id) {
-        (None, None) => {
-            let detailed_user = user.detailed_user().await?;
-
-            Ok(Json(detailed_user))
-        }
-        (None, Some(user_id)) => {
-            let target_user_id = UserId(user_id);
-
-            let mut target_user = app.user_by_id(target_user_id).await?;
-
-            let detailed_user = target_user.detailed_user(&mut user).await?;
-
-            Ok(Json(detailed_user))
-        }
-        (Some(name), None) => {
-            let mut target_user = app.user_by_name(&name).await?;
-
-            let detailed_user = target_user.detailed_user(&mut user).await?;
-
-            Ok(Json(detailed_user))
-        }
-        (Some(_), Some(_)) => Err(AppError::BadRequest),
-    }
-}
 
 #[get("/hosts")]
 async fn list_hosts(
@@ -316,16 +277,8 @@ async fn get_app_image(
 
 pub fn api_service() -> impl HttpServiceFactory {
     web::scope("/api")
-        .wrap(from_fn(auth_middleware))
-        .service(services![
-            // -- Auth
-            auth::login,
-            auth::logout,
-            auth::authenticate
-        ])
         .service(services![
             // -- Host
-            get_user,
             list_hosts,
             get_host,
             post_host,
@@ -340,12 +293,5 @@ pub fn api_service() -> impl HttpServiceFactory {
             // -- Stream
             stream::start_host,
             stream::cancel_host,
-        ])
-        .service(services![
-            // -- Admin
-            add_user,
-            patch_user,
-            delete_user,
-            list_users
         ])
 }

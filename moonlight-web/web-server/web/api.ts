@@ -1,7 +1,5 @@
 import { App, DeleteHostQuery, DeleteUserRequest, DetailedHost, DetailedUser, GetAppImageQuery, GetAppsQuery, GetAppsResponse, GetHostQuery, GetHostResponse, GetHostsResponse, GetUserQuery, GetUsersResponse, PatchUserRequest, PostCancelRequest, PostCancelResponse, PostLoginRequest, PostPairRequest, PostPairResponse1, PostPairResponse2, PostUserRequest, PostWakeUpRequest, PostHostRequest, PostHostResponse, UndetailedHost, PatchHostRequest } from "./api_bindings.js";
 import { showErrorPopup } from "./component/error.js";
-import { showMessage, showModal } from "./component/modal/index.js";
-import { ApiUserPasswordPrompt } from "./component/modal/login.js";
 import { buildUrl } from "./config_.js";
 
 // IMPORTANT: this should be a bit bigger than the moonlight-common reqwest backend timeout if some hosts are offline!
@@ -30,44 +28,7 @@ window.addEventListener("unhandledrejection", handleRejection)
 export async function getApi(): Promise<Api> {
     const host_url = buildUrl("/api")
 
-    let api = { host_url, bearer: null, user: null }
-
-    if (await apiAuthenticate(api)) {
-        return api
-    }
-
-    let newApi: Api
-    while (true) {
-        const api = await tryLogin()
-        if (api) {
-            newApi = api
-            break
-        }
-    }
-
-    return newApi
-}
-export async function tryLogin(): Promise<Api | null> {
-    const host_url = buildUrl("/api")
-
-    let api = { host_url, bearer: null, user: null }
-
-    const prompt = new ApiUserPasswordPrompt()
-    const userAuth = await showModal(prompt)
-
-    if (userAuth == null) {
-        return null
-    }
-
-    if (await apiLogin(api, userAuth)) {
-        if (!await apiAuthenticate(api)) {
-            showErrorPopup("Login was successful but authentication doesn't work!")
-        }
-        return api
-    } else {
-        await showMessage("Credentials are not Valid")
-        return null
-    }
+    return { host_url, bearer: null, user: null }
 }
 
 const GET = "GET"
