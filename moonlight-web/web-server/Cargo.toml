@@ -28,6 +28,7 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 pem = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 
 async-stream = { workspace = true }
 futures = { workspace = true }

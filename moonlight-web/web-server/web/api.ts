@@ -8,6 +8,9 @@ import {
   GetHostQuery,
   GetHostResponse,
   GetHostsResponse,
+  GetLocalBootstrapResponse,
+  GetLocalStatusResponse,
+  LocalErrorResponse,
   PostCancelRequest,
   PostCancelResponse,
   PostHostRequest,
@@ -242,4 +245,36 @@ export async function apiHostCancel(api: Api, request: PostCancelRequest): Promi
   });
 
   return response as PostCancelResponse;
+}
+
+export async function apiGetLocalStatus(api: Api): Promise<GetLocalStatusResponse> {
+  const response = await fetchApi(api, "/local/status", GET);
+  return response as GetLocalStatusResponse;
+}
+
+export async function apiPostLocalEnsureReady(api: Api): Promise<GetLocalBootstrapResponse> {
+  const response = await fetchApi(api, "/local/ensure_ready", POST, {
+    response: "json",
+  });
+  return response as GetLocalBootstrapResponse;
+}
+
+export async function apiGetLocalBootstrap(api: Api): Promise<GetLocalBootstrapResponse> {
+  const response = await fetchApi(api, "/local/bootstrap", GET);
+  return response as GetLocalBootstrapResponse;
+}
+
+export async function extractLocalErrorResponse(error: unknown): Promise<LocalErrorResponse | null> {
+  if (!(error instanceof FetchError)) {
+    return null;
+  }
+  const response = error.getResponse();
+  if (response == null) {
+    return null;
+  }
+  try {
+    return (await response.json()) as LocalErrorResponse;
+  } catch {
+    return null;
+  }
 }

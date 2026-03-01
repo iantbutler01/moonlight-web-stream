@@ -201,7 +201,11 @@ impl Storage for JsonStorage {
         })
     }
 
-    async fn modify_host(&self, host_id: HostId, modify: StorageHostModify) -> Result<(), AppError> {
+    async fn modify_host(
+        &self,
+        host_id: HostId,
+        modify: StorageHostModify,
+    ) -> Result<(), AppError> {
         let hosts = self.hosts.read().await;
         let host = hosts.get(&host_id.0).ok_or(AppError::HostNotFound)?;
         let mut host = host.write().await;

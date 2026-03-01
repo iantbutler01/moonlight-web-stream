@@ -186,10 +186,7 @@ impl Host {
         }
     }
     // None = Offline
-    async fn host_info(
-        &mut self,
-        app: &AppInner,
-    ) -> Result<Option<HostInfo>, AppError> {
+    async fn host_info(&mut self, app: &AppInner) -> Result<Option<HostInfo>, AppError> {
         if let Some(cache) = self.cache_host_info.as_ref() {
             return Ok(Some(cache.clone()));
         }
@@ -369,10 +366,7 @@ impl Host {
     pub async fn pair(&mut self, pin: PairPin) -> Result<(), AppError> {
         let app = self.app.access()?;
 
-        let info = self
-            .host_info(&app)
-            .await?
-            .ok_or(AppError::HostNotFound)?;
+        let info = self.host_info(&app).await?.ok_or(AppError::HostNotFound)?;
 
         if matches!(info.pair_status.into(), PairStatus::Paired) {
             return Err(AppError::HostPaired);
@@ -459,10 +453,7 @@ impl Host {
     pub async fn list_apps(&mut self) -> Result<Vec<App>, AppError> {
         let app = self.app.access()?;
 
-        let info = self
-            .host_info(&app)
-            .await?
-            .ok_or(AppError::HostOffline)?;
+        let info = self.host_info(&app).await?.ok_or(AppError::HostOffline)?;
 
         self.use_client(
             &app,
@@ -493,10 +484,7 @@ impl Host {
     ) -> Result<Bytes, AppError> {
         let app = self.app.access()?;
 
-        let info = self
-            .host_info(&app)
-            .await?
-            .ok_or(AppError::HostOffline)?;
+        let info = self.host_info(&app).await?.ok_or(AppError::HostOffline)?;
 
         let cache_key = (self.id, app_id);
         if !force_refresh {
@@ -542,10 +530,7 @@ impl Host {
     pub async fn cancel_app(&mut self) -> Result<bool, AppError> {
         let app = self.app.access()?;
 
-        let info = self
-            .host_info(&app)
-            .await?
-            .ok_or(AppError::HostOffline)?;
+        let info = self.host_info(&app).await?.ok_or(AppError::HostOffline)?;
 
         self.use_client(
             &app,

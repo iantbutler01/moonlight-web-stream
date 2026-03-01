@@ -26,6 +26,7 @@ use crate::app::{
 };
 
 pub mod host;
+pub mod local;
 pub mod storage;
 
 #[derive(Debug, Error)]
@@ -119,7 +120,11 @@ impl App {
     }
 
     pub async fn list_hosts(&self) -> Result<Vec<host::Host>, AppError> {
-        let hosts = self.inner.storage.list_hosts().await?
+        let hosts = self
+            .inner
+            .storage
+            .list_hosts()
+            .await?
             .into_iter()
             .map(|(host_id, host)| host::Host {
                 app: self.new_ref(),

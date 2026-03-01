@@ -1,28 +1,31 @@
 use actix_web::{
-    HttpRequest, http::header,
-    HttpResponse, delete,
+    HttpRequest, HttpResponse, delete,
     dev::HttpServiceFactory,
     get,
+    http::header,
     post, services,
     web::{self, Data, Json, Query},
 };
 use futures::future::try_join_all;
 use log::warn;
 use moonlight_common::PairPin;
-use tokio::spawn;
 use sha2::{Digest, Sha256};
+use tokio::spawn;
 
 use crate::{
     api::response_streaming::StreamedResponse,
     app::{
         App, AppError,
         host::{AppId, HostId},
+        local::{self, LocalEnsureError, LocalFailureCode as LocalFailureKind},
     },
 };
 use common::api_bindings::{
     self, DeleteHostQuery, GetAppImageQuery, GetAppsQuery, GetAppsResponse, GetHostQuery,
-    GetHostResponse, GetHostsResponse, PostHostRequest, PostHostResponse, PostPairRequest,
-    PostPairResponse1, PostPairResponse2, PostWakeUpRequest, UndetailedHost,
+    GetHostResponse, GetHostsResponse, GetLocalBootstrapResponse, GetLocalStatusResponse,
+    LocalErrorResponse, LocalFailureCode, LocalStreamCapabilities, PostHostRequest,
+    PostHostResponse, PostPairRequest, PostPairResponse1, PostPairResponse2, PostWakeUpRequest,
+    UndetailedHost,
 };
 
 pub mod stream;
@@ -221,26 +224,92 @@ async fn get_app_image(
 
     if let Some(if_none_match) = req.headers().get(header::IF_NONE_MATCH) {
         if if_none_match.to_str().ok() == Some(&etag) && query.force_refresh == false {
-            return Ok(
-                HttpResponse::NotModified()
-                    .insert_header((header::ETAG, etag))
-                    .insert_header((header::CACHE_CONTROL, cache_control))
-                    .finish()
-            );
+            return Ok(HttpResponse::NotModified()
+                .insert_header((header::ETAG, etag))
+                .insert_header((header::CACHE_CONTROL, cache_control))
+                .finish());
         }
     }
 
-    Ok(
-        HttpResponse::Ok()
-            .insert_header((header::ETAG, etag))
-            .insert_header((header::CACHE_CONTROL, cache_control))
-            .body(image)
-    )
+    Ok(HttpResponse::Ok()
+        .insert_header((header::ETAG, etag))
+        .insert_header((header::CACHE_CONTROL, cache_control))
+        .body(image))
+}
+
+#[get("/local/status")]
+async fn local_status(app: Data<App>) -> Json<GetLocalStatusResponse> {
+    let status = local::get_local_status(&app).await;
+
+    Json(GetLocalStatusResponse {
+        ready: status.ready,
+        host_id: status.host_id,
+        app_id: status.app_id,
+        status_text: status.status_text,
+        capabilities: LocalStreamCapabilities {
+            can_take_over: status.can_take_over,
+            observe_mode_default: status.observe_mode_default,
+        },
+        failure: status.failure.map(into_api_local_failure_code),
+    })
+}
+
+#[post("/local/ensure_ready")]
+async fn local_ensure_ready(app: Data<App>) -> HttpResponse {
+    local_bootstrap_response(app).await
+}
+
+#[get("/local/bootstrap")]
+async fn local_bootstrap(app: Data<App>) -> HttpResponse {
+    local_bootstrap_response(app).await
+}
+
+async fn local_bootstrap_response(app: Data<App>) -> HttpResponse {
+    match local::ensure_local_bootstrap(&app).await {
+        Ok(bootstrap) => HttpResponse::Ok().json(GetLocalBootstrapResponse {
+            host_id: bootstrap.host_id,
+            app_id: bootstrap.app_id,
+            status_text: bootstrap.status_text,
+            capabilities: LocalStreamCapabilities {
+                can_take_over: bootstrap.can_take_over,
+                observe_mode_default: bootstrap.observe_mode_default,
+            },
+        }),
+        Err(error) => local_error_response(error),
+    }
+}
+
+fn local_error_response(error: LocalEnsureError) -> HttpResponse {
+    let mut status_code = if error.retryable {
+        HttpResponse::ServiceUnavailable()
+    } else {
+        HttpResponse::InternalServerError()
+    };
+
+    status_code.json(LocalErrorResponse {
+        code: into_api_local_failure_code(error.code),
+        status_text: error.status_text,
+        detail: error.detail,
+    })
+}
+
+fn into_api_local_failure_code(value: LocalFailureKind) -> LocalFailureCode {
+    match value {
+        LocalFailureKind::SunshineNotReady => LocalFailureCode::SunshineNotReady,
+        LocalFailureKind::AssociationFailed => LocalFailureCode::AssociationFailed,
+        LocalFailureKind::PairingFailed => LocalFailureCode::PairingFailed,
+        LocalFailureKind::DesktopAppNotFound => LocalFailureCode::DesktopAppNotFound,
+        LocalFailureKind::StreamBackendUnhealthy => LocalFailureCode::StreamBackendUnhealthy,
+    }
 }
 
 pub fn api_service() -> impl HttpServiceFactory {
     web::scope("/api")
         .service(services![
+            // -- Local single-host bootstrap
+            local_status,
+            local_ensure_ready,
+            local_bootstrap,
             // -- Host
             list_hosts,
             get_host,

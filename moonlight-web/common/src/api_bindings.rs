@@ -200,6 +200,52 @@ pub struct PostCancelResponse {
     pub success: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug, TS, Clone, Copy)]
+#[ts(export, export_to = EXPORT_PATH)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalFailureCode {
+    SunshineNotReady,
+    AssociationFailed,
+    PairingFailed,
+    DesktopAppNotFound,
+    StreamBackendUnhealthy,
+}
+
+#[derive(Serialize, Deserialize, Debug, TS, Clone)]
+#[ts(export, export_to = EXPORT_PATH)]
+pub struct LocalStreamCapabilities {
+    pub can_take_over: bool,
+    pub observe_mode_default: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, TS, Clone)]
+#[ts(export, export_to = EXPORT_PATH)]
+pub struct GetLocalStatusResponse {
+    pub ready: bool,
+    pub host_id: Option<u32>,
+    pub app_id: Option<u32>,
+    pub status_text: String,
+    pub capabilities: LocalStreamCapabilities,
+    pub failure: Option<LocalFailureCode>,
+}
+
+#[derive(Serialize, Deserialize, Debug, TS, Clone)]
+#[ts(export, export_to = EXPORT_PATH)]
+pub struct GetLocalBootstrapResponse {
+    pub host_id: u32,
+    pub app_id: u32,
+    pub status_text: String,
+    pub capabilities: LocalStreamCapabilities,
+}
+
+#[derive(Serialize, Deserialize, Debug, TS, Clone)]
+#[ts(export, export_to = EXPORT_PATH)]
+pub struct LocalErrorResponse {
+    pub code: LocalFailureCode,
+    pub status_text: String,
+    pub detail: Option<String>,
+}
+
 // -- Stream
 
 #[derive(Serialize, Deserialize, Debug, TS, Clone, Copy, PartialEq, Eq)]
