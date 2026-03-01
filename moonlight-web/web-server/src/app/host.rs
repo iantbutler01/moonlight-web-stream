@@ -4,7 +4,7 @@ use std::{
 };
 
 use actix_web::web::Bytes;
-use common::api_bindings::{self, DetailedHost, HostOwner, HostState, PairStatus, UndetailedHost};
+use common::api_bindings::{self, DetailedHost, HostState, PairStatus, UndetailedHost};
 use log::warn;
 use moonlight_common::{
     PairPin, ServerState,
@@ -21,7 +21,6 @@ use uuid::Uuid;
 use crate::app::{
     AppError, AppInner, AppRef, MoonlightClient,
     storage::{StorageHost, StorageHostModify, StorageHostPairInfo},
-    user::{AuthenticatedUser, Role, UserId},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -31,7 +30,7 @@ pub struct Host {
     pub(super) app: AppRef,
     pub(super) id: HostId,
     pub(super) cache_storage: Option<StorageHost>,
-    pub(super) cache_host_info: Option<(UserId, HostInfo)>,
+    pub(super) cache_host_info: Option<HostInfo>,
 }
 
 impl Debug for Host {
@@ -74,23 +73,7 @@ impl Host {
         self.id
     }
 
-    async fn can_use(&self, user: &mut AuthenticatedUser) -> Result<(), AppError> {
-        let owner = self.owner().await?;
-        if owner.is_none() || owner == Some(user.id()) || matches!(user.role().await?, Role::Admin)
-        {
-            Ok(())
-        } else {
-            Err(AppError::Forbidden)
-        }
-    }
-
-    pub async fn modify(
-        &mut self,
-        user: &mut AuthenticatedUser,
-        modify: StorageHostModify,
-    ) -> Result<(), AppError> {
-        self.can_use(user).await?;
-
+    pub async fn modify(&mut self, modify: StorageHostModify) -> Result<(), AppError> {
         let app = self.app.access()?;
 
         self.cache_storage = None;
@@ -100,40 +83,14 @@ impl Host {
         Ok(())
     }
 
-    pub async fn owner(&self) -> Result<Option<UserId>, AppError> {
-        let app = self.app.access()?;
-
-        let host = self.storage_host(&app).await?;
-
-        Ok(host.owner)
-    }
-    async fn owner_info(
-        &self,
-        user: &AuthenticatedUser,
-        this: &StorageHost,
-    ) -> Result<HostOwner, AppError> {
-        Ok(match this.owner {
-            None => HostOwner::Global,
-            Some(user_id) if user.id() == user_id => HostOwner::ThisUser,
-            _ => unreachable!(),
-        })
-    }
-
-    pub async fn undetailed_host_cached(
-        &self,
-        user: &mut AuthenticatedUser,
-    ) -> Result<UndetailedHost, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn undetailed_host_cached(&self) -> Result<UndetailedHost, AppError> {
         let app = self.app.access()?;
 
         let storage = self.storage_host(&app).await?;
-        let owner = self.owner_info(user, &storage).await?;
 
         Ok(UndetailedHost {
             host_id: storage.id.0,
             name: storage.cache.name,
-            owner,
             paired: if storage.pair_info.is_some() {
                 PairStatus::Paired
             } else {
@@ -146,12 +103,11 @@ impl Host {
     async fn use_client<R>(
         &mut self,
         app: &AppInner,
-        user: &mut AuthenticatedUser,
         pairing: bool,
         // app, https_capable, client, host, port, client_info
         f: impl AsyncFnOnce(&mut Self, bool, &mut MoonlightClient, &str, u16, ClientInfo) -> R,
     ) -> Result<R, AppError> {
-        let user_unique_id = user.host_unique_id().await?;
+        let client_unique_id = app.config.moonlight.pair_device_name.clone();
         let host_data = self.storage_host(app).await?;
 
         let (mut client, https_capable) = if pairing {
@@ -177,7 +133,7 @@ impl Host {
         };
 
         let info = ClientInfo {
-            unique_id: &user_unique_id,
+            unique_id: &client_unique_id,
             uuid: Uuid::new_v4(),
         };
 
@@ -203,12 +159,7 @@ impl Host {
         app.storage.get_host(self.id).await
     }
 
-    pub async fn address_port(
-        &self,
-        user: &mut AuthenticatedUser,
-    ) -> Result<(String, u16), AppError> {
-        self.can_use(user).await?;
-
+    pub async fn address_port(&self) -> Result<(String, u16), AppError> {
         let app = self.app.access()?;
 
         let host = app.storage.get_host(self.id).await?;
@@ -216,12 +167,7 @@ impl Host {
         Ok((host.address, host.http_port))
     }
 
-    pub async fn pair_info(
-        &self,
-        user: &mut AuthenticatedUser,
-    ) -> Result<StorageHostPairInfo, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn pair_info(&self) -> Result<StorageHostPairInfo, AppError> {
         let app = self.app.access()?;
 
         let host = app.storage.get_host(self.id).await?;
@@ -243,19 +189,13 @@ impl Host {
     async fn host_info(
         &mut self,
         app: &AppInner,
-        user: &mut AuthenticatedUser,
     ) -> Result<Option<HostInfo>, AppError> {
-        let user_id = user.id();
-
-        if let Some((cache_user_id, cache)) = self.cache_host_info.as_ref()
-            && *cache_user_id == user_id
-        {
+        if let Some(cache) = self.cache_host_info.as_ref() {
             return Ok(Some(cache.clone()));
         }
 
         self.use_client(
             app,
-            user,
             false,
             async |this, https_capable, client, host, port, client_info| {
                 let mut info = match this.is_offline(
@@ -297,7 +237,7 @@ impl Host {
                     }
                 }
 
-                this.cache_host_info = Some((user_id, info.clone()));
+                this.cache_host_info = Some(info.clone());
 
                 Ok(Some(info))
             },
@@ -305,18 +245,10 @@ impl Host {
         .await?
     }
 
-    pub async fn undetailed_host(
-        &mut self,
-        user: &mut AuthenticatedUser,
-    ) -> Result<UndetailedHost, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn undetailed_host(&mut self) -> Result<UndetailedHost, AppError> {
         let app = self.app.access()?;
 
-        let storage = self.storage_host(&app).await?;
-        let owner = self.owner_info(user, &storage).await?;
-
-        match self.host_info(&app, user).await {
+        match self.host_info(&app).await {
             Ok(Some(info)) => {
                 let server_state = match ServerState::from_str(&info.state_string) {
                     Ok(state) => Some(state),
@@ -333,7 +265,6 @@ impl Host {
                 Ok(UndetailedHost {
                     host_id: self.id.0,
                     name: info.host_name,
-                    owner,
                     paired: info.pair_status.into(),
                     server_state: server_state.map(HostState::from),
                 })
@@ -350,7 +281,6 @@ impl Host {
                 Ok(UndetailedHost {
                     host_id: self.id.0,
                     name: host.cache.name,
-                    owner,
                     paired,
                     server_state: None,
                 })
@@ -358,19 +288,12 @@ impl Host {
             Err(err) => Err(err),
         }
     }
-    pub async fn detailed_host(
-        &mut self,
-        user: &mut AuthenticatedUser,
-    ) -> Result<DetailedHost, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn detailed_host(&mut self) -> Result<DetailedHost, AppError> {
         let app = self.app.access()?;
 
         let storage = self.storage_host(&app).await?;
 
-        let owner = self.owner_info(user, &storage).await?;
-
-        match self.host_info(&app, user).await {
+        match self.host_info(&app).await {
             Ok(Some(info)) => {
                 let server_state = match ServerState::from_str(&info.state_string) {
                     Ok(state) => Some(state),
@@ -386,7 +309,6 @@ impl Host {
 
                 Ok(DetailedHost {
                     host_id: self.id.0,
-                    owner,
                     name: info.host_name,
                     paired: info.pair_status.into(),
                     server_state: server_state.map(HostState::from),
@@ -413,7 +335,6 @@ impl Host {
 
                 Ok(DetailedHost {
                     host_id: self.id.0,
-                    owner,
                     name: storage.cache.name,
                     paired,
                     server_state: None,
@@ -436,32 +357,20 @@ impl Host {
     }
 
     #[allow(dead_code)]
-    pub async fn is_paired(
-        &mut self,
-        user: &mut AuthenticatedUser,
-    ) -> Result<PairStatus, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn is_paired(&mut self) -> Result<PairStatus, AppError> {
         let app = self.app.access()?;
 
-        match self.host_info(&app, user).await? {
+        match self.host_info(&app).await? {
             Some(info) => Ok(info.pair_status.into()),
             None => Ok(PairStatus::NotPaired),
         }
     }
 
-    pub async fn pair(
-        &mut self,
-        user: &mut AuthenticatedUser,
-        pin: PairPin,
-    ) -> Result<(), AppError> {
-        self.can_use(user).await?;
-
-        let user_id = user.id();
+    pub async fn pair(&mut self, pin: PairPin) -> Result<(), AppError> {
         let app = self.app.access()?;
 
         let info = self
-            .host_info(&app, user)
+            .host_info(&app)
             .await?
             .ok_or(AppError::HostNotFound)?;
 
@@ -472,7 +381,6 @@ impl Host {
         let modify = self
             .use_client(
                 &app,
-                user,
                 true,
                 async |this,_https_capable, client, host, port, client_info| {
                     let auth = generate_new_client()?;
@@ -503,7 +411,7 @@ impl Host {
                     .await
                     {
                         Ok(info) => {
-                            this.cache_host_info = Some((user_id, info.clone()));
+                            this.cache_host_info = Some(info.clone());
 
                             (Some(info.host_name), Some(info.mac))
                         },
@@ -527,19 +435,15 @@ impl Host {
             )
             .await??;
 
-        self.modify(user, modify).await
+        self.modify(modify).await
     }
 
     #[allow(dead_code)]
-    pub async fn unpair(&self, user: &mut AuthenticatedUser) -> Result<Host, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn unpair(&self) -> Result<Host, AppError> {
         todo!()
     }
 
-    pub async fn wake(&self, user: &mut AuthenticatedUser) -> Result<(), AppError> {
-        self.can_use(user).await?;
-
+    pub async fn wake(&self) -> Result<(), AppError> {
         let app = self.app.access()?;
 
         let storage = self.storage_host(&app).await?;
@@ -552,19 +456,16 @@ impl Host {
         }
     }
 
-    pub async fn list_apps(&mut self, user: &mut AuthenticatedUser) -> Result<Vec<App>, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn list_apps(&mut self) -> Result<Vec<App>, AppError> {
         let app = self.app.access()?;
 
         let info = self
-            .host_info(&app, user)
+            .host_info(&app)
             .await?
             .ok_or(AppError::HostOffline)?;
 
         self.use_client(
             &app,
-            user,
             false,
             async |_this, https_capable, client, host, _port, client_info| {
                 if !https_capable {
@@ -587,20 +488,17 @@ impl Host {
     }
     pub async fn app_image(
         &mut self,
-        user: &mut AuthenticatedUser,
         app_id: AppId,
         force_refresh: bool,
     ) -> Result<Bytes, AppError> {
-        self.can_use(user).await?;
-
         let app = self.app.access()?;
 
         let info = self
-            .host_info(&app, user)
+            .host_info(&app)
             .await?
             .ok_or(AppError::HostOffline)?;
 
-        let cache_key = (user.id(), self.id, app_id);
+        let cache_key = (self.id, app_id);
         if !force_refresh {
             {
                 let app_images = app.app_image_cache.read().await;
@@ -613,7 +511,6 @@ impl Host {
         let app_image = self
             .use_client(
                 &app,
-                user,
                 false,
                 async |_this, https_capable, client, host, _port, client_info| {
                     if !https_capable {
@@ -642,19 +539,16 @@ impl Host {
         Ok(app_image)
     }
 
-    pub async fn cancel_app(&mut self, user: &mut AuthenticatedUser) -> Result<bool, AppError> {
-        self.can_use(user).await?;
-
+    pub async fn cancel_app(&mut self) -> Result<bool, AppError> {
         let app = self.app.access()?;
 
         let info = self
-            .host_info(&app, user)
+            .host_info(&app)
             .await?
             .ok_or(AppError::HostOffline)?;
 
         self.use_client(
             &app,
-            user,
             false,
             async |_this, https_capable, client, host, _port, client_info| {
                 if !https_capable {
@@ -674,22 +568,15 @@ impl Host {
         .await?
     }
 
-    pub async fn delete(self, user: &mut AuthenticatedUser) -> Result<(), AppError> {
+    pub async fn delete(self) -> Result<(), AppError> {
         let app = self.app.access()?;
-
-        let host = app.storage.get_host(self.id).await?;
-
-        if host.owner == Some(user.id()) || matches!(user.role().await?, Role::Admin) {
-            {
-                let mut app_images = app.app_image_cache.write().await;
-                app_images.retain(|(_, host_id, _), _| *host_id != self.id);
-            }
-
-            drop(app);
-            self.delete_no_auth().await
-        } else {
-            Err(AppError::Forbidden)
+        {
+            let mut app_images = app.app_image_cache.write().await;
+            app_images.retain(|(host_id, _), _| *host_id != self.id);
         }
+
+        drop(app);
+        self.delete_no_auth().await
     }
     pub async fn delete_no_auth(self) -> Result<(), AppError> {
         let app = self.app.access()?;

@@ -21,13 +21,6 @@ pub struct ConfigJs {
     pub default_settings: Option<TsAny>,
 }
 
-#[derive(Serialize, Deserialize, Debug, TS, Clone)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct PostLoginRequest {
-    pub name: String,
-    pub password: String,
-}
-
 #[derive(Serialize, Deserialize, Debug, TS, Clone, Copy)]
 #[ts(export, export_to = EXPORT_PATH)]
 pub enum HostState {
@@ -63,16 +56,8 @@ impl From<moonlight_common::PairStatus> for PairStatus {
 
 #[derive(Serialize, Deserialize, Debug, TS)]
 #[ts(export, export_to = EXPORT_PATH)]
-pub enum HostOwner {
-    ThisUser,
-    Global,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
 pub struct UndetailedHost {
     pub host_id: u32,
-    pub owner: HostOwner,
     pub name: String,
     pub paired: PairStatus,
     /// None if offline else the state
@@ -83,7 +68,6 @@ pub struct UndetailedHost {
 #[ts(export, export_to = EXPORT_PATH)]
 pub struct DetailedHost {
     pub host_id: u32,
-    pub owner: HostOwner,
     pub name: String,
     pub paired: PairStatus,
     pub server_state: Option<HostState>,
@@ -152,16 +136,6 @@ pub struct PostHostResponse {
 
 #[derive(Serialize, Deserialize, Debug, TS)]
 #[ts(export, export_to = EXPORT_PATH)]
-pub struct PatchHostRequest {
-    /// The host id of the host to change
-    pub host_id: u32,
-    /// Option<Option<u32>> are not supported
-    pub change_owner: bool,
-    pub owner: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
 pub struct DeleteHostQuery {
     pub host_id: u32,
 }
@@ -224,61 +198,6 @@ pub struct PostCancelRequest {
 #[ts(export, export_to = EXPORT_PATH)]
 pub struct PostCancelResponse {
     pub success: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub enum UserRole {
-    User,
-    Admin,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct GetUserQuery {
-    pub name: Option<String>,
-    pub user_id: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct DetailedUser {
-    pub id: u32,
-    pub is_default_user: bool,
-    pub name: String,
-    pub role: UserRole,
-    pub client_unique_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct PostUserRequest {
-    pub name: String,
-    pub password: String,
-    pub role: UserRole,
-    pub client_unique_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct PatchUserRequest {
-    /// The user id of the user to change
-    pub id: u32,
-    pub password: Option<String>,
-    pub role: Option<UserRole>,
-    pub client_unique_id: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct DeleteUserRequest {
-    pub id: u32,
-}
-
-#[derive(Serialize, Deserialize, Debug, TS)]
-#[ts(export, export_to = EXPORT_PATH)]
-pub struct GetUsersResponse {
-    pub users: Vec<DetailedUser>,
 }
 
 // -- Stream

@@ -1,349 +1,245 @@
-import { App, DeleteHostQuery, DeleteUserRequest, DetailedHost, DetailedUser, GetAppImageQuery, GetAppsQuery, GetAppsResponse, GetHostQuery, GetHostResponse, GetHostsResponse, GetUserQuery, GetUsersResponse, PatchUserRequest, PostCancelRequest, PostCancelResponse, PostLoginRequest, PostPairRequest, PostPairResponse1, PostPairResponse2, PostUserRequest, PostWakeUpRequest, PostHostRequest, PostHostResponse, UndetailedHost, PatchHostRequest } from "./api_bindings.js";
-import { showErrorPopup } from "./component/error.js";
+import {
+  App,
+  DeleteHostQuery,
+  DetailedHost,
+  GetAppImageQuery,
+  GetAppsQuery,
+  GetAppsResponse,
+  GetHostQuery,
+  GetHostResponse,
+  GetHostsResponse,
+  PostCancelRequest,
+  PostCancelResponse,
+  PostHostRequest,
+  PostHostResponse,
+  PostPairRequest,
+  PostPairResponse1,
+  PostPairResponse2,
+  PostWakeUpRequest,
+  UndetailedHost,
+} from "./api_bindings.js";
 import { buildUrl } from "./config_.js";
 
 // IMPORTANT: this should be a bit bigger than the moonlight-common reqwest backend timeout if some hosts are offline!
-const API_TIMEOUT = 12000
-
-// -- Any errors related to auth will reload page -> show the auth modal
-function handleError(event: ErrorEvent) {
-    onError(event.error)
-}
-function handleRejection(event: PromiseRejectionEvent) {
-    onError(event.reason)
-}
-function onError(error: any) {
-    if (error instanceof FetchError) {
-        const response = error.getResponse()
-        // 401 = Unauthorized
-        if (response?.status == 401) {
-            window.location.reload()
-        }
-    }
-}
-
-window.addEventListener("error", handleError)
-window.addEventListener("unhandledrejection", handleRejection)
+const API_TIMEOUT = 12000;
 
 export async function getApi(): Promise<Api> {
-    const host_url = buildUrl("/api")
-
-    return { host_url, bearer: null, user: null }
+  const host_url = buildUrl("/api");
+  return { host_url };
 }
 
-const GET = "GET"
-const POST = "POST"
-const PATCH = "PATCH"
-const DELETE = "DELETE"
+const GET = "GET";
+const POST = "POST";
+const DELETE = "DELETE";
 
 export type Api = {
-    host_url: string
-    bearer: string | null,
-    user: DetailedUser | null,
-}
+  host_url: string;
+};
 
 export type ApiFetchInit = {
-    json?: any,
-    query?: any,
-    noTimeout?: boolean,
-}
+  json?: unknown;
+  query?: Record<string, unknown>;
+  noTimeout?: boolean;
+};
 
 export function isDetailedHost(host: UndetailedHost | DetailedHost): host is DetailedHost {
-    return (host as DetailedHost).https_port !== undefined
+  return (host as DetailedHost).https_port !== undefined;
 }
 
 function buildRequest(api: Api, endpoint: string, method: string, init?: ApiFetchInit): [string, RequestInit] {
-    const queryObj = init?.query || {};
-    const queryParts = [];
-    for (const key in queryObj) {
-        // Remove all null values from query, these cause problems in rust
-        if (queryObj[key] != null) {
-            queryParts.push(
-                encodeURIComponent(key) + "=" + encodeURIComponent(queryObj[key])
-            );
-        }
+  const queryObj = init?.query || {};
+  const queryParts: string[] = [];
+  for (const key in queryObj) {
+    if (queryObj[key] != null) {
+      queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(queryObj[key]))}`);
     }
-    const queryString = queryParts.length > 0 ? "?" + queryParts.join("&") : "";
+  }
+  const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
 
-    const url = `${api.host_url}${endpoint}${queryString}`
+  const url = `${api.host_url}${endpoint}${queryString}`;
 
-    const headers: any = {
-    };
+  const headers: Record<string, string> = {};
+  if (init?.json) {
+    headers["Content-Type"] = "application/json";
+  }
 
-    if (api.bearer) {
-        headers["Authorization"] = `Bearer ${api.bearer}`;
-    }
+  const request: RequestInit = {
+    method,
+    headers,
+    body: init?.json ? JSON.stringify(init.json) : undefined,
+    credentials: "include",
+  };
 
-    if (init?.json) {
-        headers["Content-Type"] = "application/json";
-    }
-
-    const request: RequestInit = {
-        method: method,
-        headers,
-        body: init?.json && JSON.stringify(init.json),
-        credentials: "include"
-    }
-
-    return [url, request]
+  return [url, request];
 }
 
 export class FetchError extends Error {
-    private response?: Response
+  private response?: Response;
 
-    constructor(type: "timeout", endpoint: string, method: string)
-    constructor(type: "failed", endpoint: string, method: string, response: Response, reason?: string)
-    constructor(type: "unknown", endpoint: string, method: string, error: Error)
-
-    constructor(type: "timeout" | "failed" | "unknown", endpoint: string, method: string, responseOrError?: Response | any, reason?: string) {
-        if (type == "timeout") {
-            super(`failed to fetch ${method} at ${endpoint} because of timeout`)
-        } else if (type == "failed") {
-            const response = responseOrError as Response
-            super(`failed to fetch ${method} at ${endpoint} with code ${response?.status} ${reason ? `because of ${reason}` : ""}`)
-
-            this.response = response
-        } else if (type == "unknown") {
-            const error = responseOrError as Error
-            super(`failed to fetch ${method} at ${endpoint} because of ${error}`)
-        }
+  constructor(type: "timeout", endpoint: string, method: string);
+  constructor(type: "failed", endpoint: string, method: string, response: Response, reason?: string);
+  constructor(type: "unknown", endpoint: string, method: string, error: Error);
+  constructor(
+    type: "timeout" | "failed" | "unknown",
+    endpoint: string,
+    method: string,
+    responseOrError?: Response | Error,
+    reason?: string,
+  ) {
+    if (type === "timeout") {
+      super(`failed to fetch ${method} at ${endpoint} because of timeout`);
+    } else if (type === "failed") {
+      const response = responseOrError as Response;
+      super(`failed to fetch ${method} at ${endpoint} with code ${response?.status} ${reason ? `because of ${reason}` : ""}`);
+      this.response = response;
+    } else {
+      const error = responseOrError as Error;
+      super(`failed to fetch ${method} at ${endpoint} because of ${error}`);
     }
+  }
 
-    getResponse(): Response | null {
-        return this.response ?? null
-    }
+  getResponse(): Response | null {
+    return this.response ?? null;
+  }
 }
 
 class StreamedJsonResponse<Initial, Other> {
-    response: Initial
+  response: Initial;
 
-    private reader
-    private decoder = new TextDecoder()
-    private bufferedText = ""
+  private reader: ReadableStreamDefaultReader<Uint8Array>;
+  private decoder = new TextDecoder();
+  private bufferedText = "";
 
-    constructor(body: ReadableStreamDefaultReader, response: Initial) {
-        this.reader = body
-        this.response = response
+  constructor(body: ReadableStreamDefaultReader<Uint8Array>, response: Initial) {
+    this.reader = body;
+    this.response = response;
+  }
+
+  async next(): Promise<Other | null> {
+    while (true) {
+      const { done, value } = await this.reader.read();
+
+      if (done) {
+        return null;
+      }
+
+      this.bufferedText += this.decoder.decode(value);
+
+      const split = this.bufferedText.split("\n", 2);
+      if (split.length === 2) {
+        this.bufferedText = split[1];
+        return JSON.parse(split[0]) as Other;
+      }
     }
-
-    async next(): Promise<Other | null> {
-        while (true) {
-            const { done, value } = await this.reader.read()
-
-            if (done) {
-                return null
-            }
-
-            this.bufferedText += this.decoder.decode(value)
-
-            const split = this.bufferedText.split("\n", 2)
-            if (split.length == 2) {
-                this.bufferedText = split[1]
-
-                const text = split[0]
-                const json = JSON.parse(text)
-
-                return json
-            }
-        }
-    }
+  }
 }
 
-export async function fetchApi(api: Api, endpoint: string, method: string, init?: { response?: "json" } & ApiFetchInit, timeout?: number): Promise<any>
-export async function fetchApi(api: Api, endpoint: string, method: string, init: { response: "ignore" } & ApiFetchInit, timeout?: number): Promise<Response>
-export async function fetchApi<Initial, Other>(api: Api, endpoint: string, method: string, init: { response: "jsonStreaming" } & ApiFetchInit, timeout?: number): Promise<StreamedJsonResponse<Initial, Other>>
+export async function fetchApi(api: Api, endpoint: string, method: string, init?: { response?: "json" } & ApiFetchInit, timeout?: number): Promise<unknown>;
+export async function fetchApi(api: Api, endpoint: string, method: string, init: { response: "ignore" } & ApiFetchInit, timeout?: number): Promise<Response>;
+export async function fetchApi<Initial, Other>(api: Api, endpoint: string, method: string, init: { response: "jsonStreaming" } & ApiFetchInit, timeout?: number): Promise<StreamedJsonResponse<Initial, Other>>;
 
-export async function fetchApi(api: Api, endpoint: string, method: string = GET, init?: { response?: "json" | "ignore" | "jsonStreaming" } & ApiFetchInit, timeout: number = API_TIMEOUT) {
-    const [url, request] = buildRequest(api, endpoint, method, init)
+export async function fetchApi<Initial = unknown, Other = unknown>(
+  api: Api,
+  endpoint: string,
+  method: string = GET,
+  init?: { response?: "json" | "ignore" | "jsonStreaming" } & ApiFetchInit,
+  timeout: number = API_TIMEOUT,
+) {
+  const [url, request] = buildRequest(api, endpoint, method, init);
 
-    request.signal = AbortSignal.timeout(timeout)
+  if (!init?.noTimeout) {
+    request.signal = AbortSignal.timeout(timeout);
+  }
 
-    let response
-    try {
-        response = await fetch(url, request)
-    } catch (e: any) {
-        throw new FetchError("unknown", endpoint, method, e)
+  let response: Response;
+  try {
+    response = await fetch(url, request);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new FetchError("timeout", endpoint, method);
     }
+    throw new FetchError("unknown", endpoint, method, error as Error);
+  }
 
-    if (!response.ok) {
-        throw new FetchError("failed", endpoint, method, response)
-    }
+  if (!response.ok) {
+    throw new FetchError("failed", endpoint, method, response);
+  }
 
-    if (init?.response == "ignore") {
-        return response
-    }
+  if (init?.response === "ignore") {
+    return response;
+  }
 
-    if (init?.response == undefined || init.response == "json") {
-        const json = await response.json()
+  if (init?.response == null || init.response === "json") {
+    return response.json();
+  }
 
-        return json
-    } else if (init?.response == "jsonStreaming") {
-        if (!response.body) {
-            throw new FetchError("failed", endpoint, method, response)
-        }
+  if (!response.body) {
+    throw new FetchError("failed", endpoint, method, response);
+  }
 
-        // @ts-ignore
-        const stream = new StreamedJsonResponse(response.body?.getReader())
-        const data = await stream.next()
-        stream.response = data
-
-        return stream
-    }
-}
-
-export async function apiLogin(api: Api, request: PostLoginRequest): Promise<boolean> {
-    let response
-
-    try {
-        response = await fetchApi(api, "/login", "post", {
-            json: request,
-            response: "ignore"
-        })
-    } catch (e) {
-        if (e instanceof FetchError) {
-            const response = e.getResponse()
-
-            if (response && (response.status == 401 || response.status == 404)) {
-                return false
-            } else {
-                showErrorPopup(e.message)
-                return false
-            }
-        }
-    }
-
-    return true
-}
-
-export async function apiLogout(api: Api): Promise<boolean> {
-    let response
-    try {
-        response = await fetchApi(api, "/logout", "post", { response: "ignore" })
-    } catch (e) {
-        throw e
-    }
-
-    return true
-}
-
-export async function apiAuthenticate(api: Api, retryOnFail?: boolean): Promise<boolean> {
-    const retryOnFail_ = retryOnFail === undefined ? true : retryOnFail
-
-    let response
-    try {
-        response = await fetchApi(api, "/authenticate", GET, { response: "ignore" })
-    } catch (e) {
-        if (e instanceof FetchError) {
-            const response = e.getResponse()
-            if (response?.status == 401) {
-                return false
-            } else if (response?.status == 409 && retryOnFail_) {
-                // 409 = Conflict, SessionTokenNotFound -> requires a new request
-                return await apiAuthenticate(api, false)
-            } else {
-                throw e
-            }
-        }
-        throw e
-    }
-
-    return response != null
-}
-
-export async function apiGetUser(api: Api, query?: GetUserQuery): Promise<DetailedUser> {
-    if (!query || (query.name == null && query.user_id == null)) {
-        if (api.user) {
-            return api.user
-        }
-    }
-
-    const response = await fetchApi(api, "/user", GET, {
-        query: query ?? { name: null, user_id: null }
-    })
-
-    return response as DetailedUser
-}
-export async function apiGetUsers(api: Api): Promise<GetUsersResponse> {
-    const response = await fetchApi(api, "/users", GET)
-
-    return response as GetUsersResponse
-}
-export async function apiPostUser(api: Api, data: PostUserRequest): Promise<DetailedUser> {
-    const response = await fetchApi(api, "/user", POST, { json: data })
-
-    return response as DetailedUser
-}
-export async function apiPatchUser(api: Api, data: PatchUserRequest): Promise<void> {
-    await fetchApi(api, "/user", PATCH, {
-        json: data,
-        response: "ignore"
-    })
-}
-export async function apiDeleteUser(api: Api, data: DeleteUserRequest): Promise<void> {
-    await fetchApi(api, "/user", DELETE, {
-        json: data,
-        response: "ignore"
-    })
+  const stream = new StreamedJsonResponse<Initial, Other>(response.body.getReader(), {} as Initial);
+  const first = await stream.next();
+  stream.response = first as Initial;
+  return stream;
 }
 
 export async function apiGetHosts(api: Api): Promise<StreamedJsonResponse<GetHostsResponse, UndetailedHost>> {
-    return await fetchApi<GetHostsResponse, UndetailedHost>(api, "/hosts", GET, { response: "jsonStreaming" })
+  return fetchApi<GetHostsResponse, UndetailedHost>(api, "/hosts", GET, { response: "jsonStreaming" });
 }
+
 export async function apiGetHost(api: Api, query: GetHostQuery): Promise<DetailedHost> {
-    const response = await fetchApi(api, "/host", GET, { query })
-
-    return (response as GetHostResponse).host
+  const response = await fetchApi(api, "/host", GET, { query });
+  return (response as GetHostResponse).host;
 }
+
 export async function apiPostHost(api: Api, data: PostHostRequest): Promise<DetailedHost> {
-    const response = await fetchApi(api, "/host", "post", { json: data })
+  const response = await fetchApi(api, "/host", POST, { json: data });
+  return (response as PostHostResponse).host;
+}
 
-    return (response as PostHostResponse).host
-}
-export async function apiPatchHost(api: Api, data: PatchHostRequest): Promise<void> {
-    await fetchApi(api, "/host", PATCH, {
-        json: data,
-        response: "ignore"
-    })
-}
 export async function apiDeleteHost(api: Api, query: DeleteHostQuery): Promise<void> {
-    await fetchApi(api, "/host", "delete", { query, response: "ignore" })
+  await fetchApi(api, "/host", DELETE, { query, response: "ignore" });
 }
 
 export async function apiPostPair(api: Api, request: PostPairRequest): Promise<StreamedJsonResponse<PostPairResponse1, PostPairResponse2>> {
-    return await fetchApi(api, "/pair", "post", {
-        json: request,
-        response: "jsonStreaming",
-        noTimeout: true
-    })
+  return fetchApi<PostPairResponse1, PostPairResponse2>(api, "/pair", POST, {
+    json: request,
+    response: "jsonStreaming",
+    noTimeout: true,
+  });
 }
 
 export async function apiWakeUp(api: Api, request: PostWakeUpRequest): Promise<void> {
-    await fetchApi(api, "/host/wake", "post", {
-        json: request,
-        response: "ignore"
-    })
+  await fetchApi(api, "/host/wake", POST, {
+    json: request,
+    response: "ignore",
+  });
 }
 
 export async function apiGetApps(api: Api, query: GetAppsQuery): Promise<Array<App>> {
-    const response = await fetchApi(api, "/apps", GET, { query }) as GetAppsResponse
-
-    return response.apps
+  const response = (await fetchApi(api, "/apps", GET, { query })) as GetAppsResponse;
+  return response.apps;
 }
 
 export async function apiGetAppImage(api: Api, query: GetAppImageQuery): Promise<Blob> {
-    const response = await fetchApi(api, "/app/image", GET, {
-        query,
-        response: "ignore"
+  const response = await fetchApi(
+    api,
+    "/app/image",
+    GET,
+    {
+      query,
+      response: "ignore",
     },
-    60000)
+    60000,
+  );
 
-    return await response.blob()
+  return response.blob();
 }
 
 export async function apiHostCancel(api: Api, request: PostCancelRequest): Promise<PostCancelResponse> {
-    const response = await fetchApi(api, "/host/cancel", POST, {
-        json: request
-    })
+  const response = await fetchApi(api, "/host/cancel", POST, {
+    json: request,
+  });
 
-    return response as PostCancelResponse
+  return response as PostCancelResponse;
 }

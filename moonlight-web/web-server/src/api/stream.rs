@@ -24,20 +24,18 @@ use tracing::{Level, instrument, span};
 use crate::app::{
     App, AppError,
     host::{AppId, HostId},
-    user::AuthenticatedUser,
 };
 
 #[get("/host/stream")]
-#[instrument(name = "start_host", skip(web_app, user, payload), fields(user_id = %user.id()))]
+#[instrument(name = "start_host", skip(web_app, payload))]
 pub async fn start_host(
     web_app: Data<App>,
-    mut user: AuthenticatedUser,
     request: HttpRequest,
     payload: Payload,
 ) -> Result<HttpResponse, Error> {
     let (response, mut session, mut stream) = actix_ws::handle(&request, payload)?;
 
-    let client_unique_id = user.host_unique_id().await?;
+    let client_unique_id = web_app.config().moonlight.pair_device_name.clone();
 
     let web_app = web_app.clone();
     actix_rt::spawn(async move {
@@ -84,7 +82,7 @@ pub async fn start_host(
         let app_id = AppId(app_id);
 
         // -- Collect host data
-        let mut host = match user.host(host_id).await {
+        let mut host = match web_app.host(host_id).await {
             Ok(host) => host,
             Err(AppError::HostNotFound) => {
                 let _ = send_ws_message(
@@ -115,7 +113,7 @@ pub async fn start_host(
             }
         };
 
-        let apps = match host.list_apps(&mut user).await {
+        let apps = match host.list_apps().await {
             Ok(apps) => apps,
             Err(err) => {
                 warn!("failed to start stream for host {host_id:?} (at list_apps): {err}");
@@ -148,7 +146,7 @@ pub async fn start_host(
             return;
         };
 
-        let (address, http_port) = match host.address_port(&mut user).await {
+        let (address, http_port) = match host.address_port().await {
             Ok(address_port) => address_port,
             Err(err) => {
                 warn!("failed to start stream for host {host_id:?} (at get address_port): {err}");
@@ -166,7 +164,7 @@ pub async fn start_host(
             }
         };
 
-        let pair_info = match host.pair_info(&mut user).await {
+        let pair_info = match host.pair_info().await {
             Ok(pair_info) => pair_info,
             Err(err) => {
                 warn!("failed to start stream for host {host_id:?} (at get pair_info): {err}");
@@ -367,14 +365,14 @@ async fn send_ws_message(sender: &mut Session, message: StreamServerMessage) -> 
 
 #[post("/host/cancel")]
 pub async fn cancel_host(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Json(request): Json<PostCancelRequest>,
 ) -> Result<Json<PostCancelResponse>, AppError> {
     let host_id = HostId(request.host_id);
 
-    let mut host = user.host(host_id).await?;
+    let mut host = app.host(host_id).await?;
 
-    host.cancel_app(&mut user).await?;
+    host.cancel_app().await?;
 
     Ok(Json(PostCancelResponse { success: true }))
 }

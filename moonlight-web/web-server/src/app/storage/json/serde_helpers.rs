@@ -93,26 +93,3 @@ where
         v: PhantomData,
     })
 }
-
-pub mod hex_array {
-    use serde::{Deserialize, Deserializer, Serializer, de};
-
-    pub fn serialize<S, const N: usize>(bytes: &[u8; N], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let encoded = hex::encode(bytes);
-        serializer.serialize_str(&encoded)
-    }
-
-    pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<[u8; N], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let decoded = hex::decode(&s).map_err(de::Error::custom)?;
-        decoded
-            .try_into()
-            .map_err(|_| de::Error::custom(format!("invalid length: expected {N} bytes")))
-    }
-}

@@ -104,3 +104,6 @@ cmake = { version = "0.1.54" }
 [workspace.lints.clippy]
 too_many_arguments = "allow"
 unwrap_used = "warn"
+
+[workspace.lints.rust]
+warnings = "deny"

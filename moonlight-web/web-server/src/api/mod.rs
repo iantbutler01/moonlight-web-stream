@@ -3,7 +3,7 @@ use actix_web::{
     HttpResponse, delete,
     dev::HttpServiceFactory,
     get,
-    patch, post, services,
+    post, services,
     web::{self, Data, Json, Query},
 };
 use futures::future::try_join_all;
@@ -17,44 +17,38 @@ use crate::{
     app::{
         App, AppError,
         host::{AppId, HostId},
-        storage::StorageHostModify,
-        user::{AuthenticatedUser, Role, UserId},
     },
 };
 use common::api_bindings::{
     self, DeleteHostQuery, GetAppImageQuery, GetAppsQuery, GetAppsResponse, GetHostQuery,
-    GetHostResponse, GetHostsResponse, PatchHostRequest, PostHostRequest, PostHostResponse,
-    PostPairRequest, PostPairResponse1, PostPairResponse2, PostWakeUpRequest, UndetailedHost,
+    GetHostResponse, GetHostsResponse, PostHostRequest, PostHostResponse, PostPairRequest,
+    PostPairResponse1, PostPairResponse2, PostWakeUpRequest, UndetailedHost,
 };
 
-pub mod auth;
 pub mod stream;
 
 pub mod response_streaming;
 
 #[get("/hosts")]
 async fn list_hosts(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
 ) -> Result<StreamedResponse<GetHostsResponse, UndetailedHost>, AppError> {
     let (mut stream_response, stream_sender) =
         StreamedResponse::new(GetHostsResponse { hosts: Vec::new() });
 
-    let hosts = user.hosts().await?;
+    let hosts = app.list_hosts().await?;
 
     // Try join all because storage should always work, the actual host info will be send using response streaming
     let undetailed_hosts = try_join_all(hosts.into_iter().map(move |mut host| {
-        let mut user = user.clone();
         let stream_sender = stream_sender.clone();
 
         async move {
             // First query db
-            let undetailed_cache = host.undetailed_host_cached(&mut user).await;
+            let undetailed_cache = host.undetailed_host_cached().await;
 
             // Then send http request now
-            let mut user = user.clone();
-
             spawn(async move {
-                let undetailed = match host.undetailed_host(&mut user).await {
+                let undetailed = match host.undetailed_host().await {
                     Ok(value) => value,
                     Err(err) => {
                         warn!("Failed to get undetailed host of {host:?}: {err}");
@@ -83,14 +77,14 @@ async fn list_hosts(
 
 #[get("/host")]
 async fn get_host(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Query(query): Query<GetHostQuery>,
 ) -> Result<Json<GetHostResponse>, AppError> {
     let host_id = HostId(query.host_id);
 
-    let mut host = user.host(host_id).await?;
+    let mut host = app.host(host_id).await?;
 
-    let detailed = host.detailed_host(&mut user).await?;
+    let detailed = host.detailed_host().await?;
 
     Ok(Json(GetHostResponse { host: detailed }))
 }
@@ -98,11 +92,10 @@ async fn get_host(
 #[post("/host")]
 async fn post_host(
     app: Data<App>,
-    mut user: AuthenticatedUser,
     Json(request): Json<PostHostRequest>,
 ) -> Result<Json<PostHostResponse>, AppError> {
-    let mut host = user
-        .host_add(
+    let mut host = app
+        .add_host(
             request.address,
             request
                 .http_port
@@ -111,58 +104,30 @@ async fn post_host(
         .await?;
 
     Ok(Json(PostHostResponse {
-        host: host.detailed_host(&mut user).await?,
+        host: host.detailed_host().await?,
     }))
-}
-
-#[patch("/host")]
-async fn patch_host(
-    mut user: AuthenticatedUser,
-    Json(request): Json<PatchHostRequest>,
-) -> Result<HttpResponse, AppError> {
-    let host_id = HostId(request.host_id);
-
-    let mut host = user.host(host_id).await?;
-
-    let mut modify = StorageHostModify::default();
-
-    let role = user.role().await?;
-    if request.change_owner {
-        match role {
-            Role::Admin => {
-                modify.owner = Some(request.owner.map(UserId));
-            }
-            Role::User => {
-                return Err(AppError::Forbidden);
-            }
-        }
-    }
-
-    host.modify(&mut user, modify).await?;
-
-    Ok(HttpResponse::Ok().finish())
 }
 
 #[delete("/host")]
 async fn delete_host(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Query(query): Query<DeleteHostQuery>,
 ) -> Result<HttpResponse, AppError> {
     let host_id = HostId(query.host_id);
 
-    user.host_delete(host_id).await?;
+    app.host(host_id).await?.delete().await?;
 
     Ok(HttpResponse::Ok().finish())
 }
 
 #[post("/pair")]
 async fn pair_host(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Json(request): Json<PostPairRequest>,
 ) -> Result<StreamedResponse<PostPairResponse1, PostPairResponse2>, AppError> {
     let host_id = HostId(request.host_id);
 
-    let mut host = user.host(host_id).await?;
+    let mut host = app.host(host_id).await?;
 
     let pin = PairPin::generate()?;
 
@@ -170,10 +135,10 @@ async fn pair_host(
         StreamedResponse::new(PostPairResponse1::Pin(pin.to_string()));
 
     spawn(async move {
-        let result = host.pair(&mut user, pin).await;
+        let result = host.pair(pin).await;
 
         let result = match result {
-            Ok(()) => host.detailed_host(&mut user).await,
+            Ok(()) => host.detailed_host().await,
             Err(err) => Err(err),
         };
 
@@ -200,28 +165,28 @@ async fn pair_host(
 
 #[post("/host/wake")]
 async fn wake_host(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Json(request): Json<PostWakeUpRequest>,
 ) -> Result<HttpResponse, AppError> {
     let host_id = HostId(request.host_id);
 
-    let host = user.host(host_id).await?;
+    let host = app.host(host_id).await?;
 
-    host.wake(&mut user).await?;
+    host.wake().await?;
 
     Ok(HttpResponse::Ok().finish())
 }
 
 #[get("/apps")]
 async fn get_apps(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Query(query): Query<GetAppsQuery>,
 ) -> Result<Json<GetAppsResponse>, AppError> {
     let host_id = HostId(query.host_id);
 
-    let mut host = user.host(host_id).await?;
+    let mut host = app.host(host_id).await?;
 
-    let apps = host.list_apps(&mut user).await?;
+    let apps = host.list_apps().await?;
 
     Ok(Json(GetAppsResponse {
         apps: apps
@@ -237,18 +202,16 @@ async fn get_apps(
 
 #[get("/app/image")]
 async fn get_app_image(
-    mut user: AuthenticatedUser,
+    app: Data<App>,
     Query(query): Query<GetAppImageQuery>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     let host_id = HostId(query.host_id);
     let app_id = AppId(query.app_id);
 
-    let mut host = user.host(host_id).await?;
+    let mut host = app.host(host_id).await?;
 
-    let image = host
-        .app_image(&mut user, app_id, query.force_refresh)
-        .await?;
+    let image = host.app_image(app_id, query.force_refresh).await?;
 
     let mut hasher = Sha256::new();
     hasher.update(&image);
@@ -282,7 +245,6 @@ pub fn api_service() -> impl HttpServiceFactory {
             list_hosts,
             get_host,
             post_host,
-            patch_host,
             wake_host,
             delete_host,
             pair_host,

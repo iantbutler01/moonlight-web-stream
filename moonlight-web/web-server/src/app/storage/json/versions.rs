@@ -5,8 +5,6 @@ use moonlight_common::mac::MacAddress;
 use pem::Pem;
 use serde::{Deserialize, Serialize};
 
-use crate::app::user::Role;
-
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub enum Json {
@@ -58,7 +56,6 @@ pub fn migrate_v1_to_v2(old: V1) -> V2 {
 
     for (id, old_host) in old.hosts.into_iter().enumerate() {
         let v2_host = V2Host {
-            owner: None,
             address: old_host.address,
             http_port: old_host.http_port,
             pair_info: old_host
@@ -79,42 +76,21 @@ pub fn migrate_v1_to_v2(old: V1) -> V2 {
         v2_hosts.insert(id as u32, v2_host);
     }
 
-    V2 {
-        users: Default::default(),
-        hosts: v2_hosts,
-    }
+    V2 { hosts: v2_hosts }
 }
 
 // -- V2
 
-use crate::app::storage::json::serde_helpers::{de_int_key, hex_array};
+use crate::app::storage::json::serde_helpers::de_int_key;
 
 #[derive(Serialize, Deserialize)]
 pub struct V2 {
-    #[serde(deserialize_with = "de_int_key")]
-    pub users: HashMap<u32, V2User>,
     #[serde(deserialize_with = "de_int_key")]
     pub hosts: HashMap<u32, V2Host>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct V2User {
-    pub role: Role,
-    pub name: String,
-    pub password: Option<V2UserPassword>,
-    pub client_unique_id: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct V2UserPassword {
-    #[serde(with = "hex_array")]
-    pub salt: [u8; 16],
-    #[serde(with = "hex_array")]
-    pub hash: [u8; 32],
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct V2Host {
-    pub owner: Option<u32>,
     pub address: String,
     pub http_port: u16,
     pub pair_info: Option<V2HostPairInfo>,

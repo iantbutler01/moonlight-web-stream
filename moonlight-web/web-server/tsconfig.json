@@ -7,5 +7,10 @@
     "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true
-  }
+  },
+  "include": [
+    "web/index.ts",
+    "web/stream.ts",
+    "web/**/*.d.ts"
+  ]
 }

@@ -234,16 +234,6 @@ pub struct WebServerConfig {
     pub certificate: Option<ConfigSsl>,
     #[serde(default)]
     pub url_path_prefix: String,
-    #[serde(default = "default_session_cookie_secure")]
-    pub session_cookie_secure: bool,
-    #[serde(default = "default_session_cookie_expiration")]
-    pub session_cookie_expiration: Duration,
-    pub first_login_create_admin: bool,
-    pub first_login_assign_global_hosts: bool,
-    pub default_user_id: Option<u32>,
-    #[serde(default = "default_anonymous_user_name")]
-    pub anonymous_user_name: Option<String>,
-    pub forwarded_header: Option<ForwardedHeaders>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,51 +248,12 @@ impl Default for WebServerConfig {
             bind_address: default_bind_address(),
             certificate: None,
             url_path_prefix: "".to_string(),
-            session_cookie_secure: default_session_cookie_secure(),
-            session_cookie_expiration: default_session_cookie_expiration(),
-            first_login_create_admin: true,
-            first_login_assign_global_hosts: true,
-            default_user_id: None,
-            anonymous_user_name: default_anonymous_user_name(),
-            forwarded_header: None,
         }
     }
 }
 
 fn default_bind_address() -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 8080))
-}
-fn default_session_cookie_secure() -> bool {
-    false
-}
-fn default_session_cookie_expiration() -> Duration {
-    const DAY_SECONDS: u64 = 24 * 60 * 60;
-
-    Duration::from_secs(DAY_SECONDS)
-}
-
-fn default_anonymous_user_name() -> Option<String> {
-    Some("viewer".to_string())
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ForwardedHeaders {
-    pub username_header: String,
-    #[serde(default = "default_forwarded_headers_auto_create_user")]
-    pub auto_create_missing_user: bool,
-}
-
-impl Default for ForwardedHeaders {
-    fn default() -> Self {
-        Self {
-            username_header: "X-Forwarded-User".to_string(),
-            auto_create_missing_user: default_forwarded_headers_auto_create_user(),
-        }
-    }
-}
-
-fn default_forwarded_headers_auto_create_user() -> bool {
-    true
 }
 
 // -- Moonlight
