@@ -11,6 +11,7 @@
   "include": [
     "web/index.ts",
     "web/stream.ts",
+    "web/stream/pipeline/worker.ts",
     "web/**/*.d.ts"
   ]
 }

@@ -77,7 +77,7 @@ button {
 }
 
 .file-button:hover,
-button:hover:not(.logout-button):not(.admin-button):not(.open-settings):not(.host-add) {
+button:hover:not(.open-settings):not(.host-add) {
     box-shadow: none;
 }
 
@@ -297,58 +297,6 @@ input[type=number] {
     transition: all 0.1s linear;
 }
 
-/** Context Menu */
-.context-menu-background {
-    display: block;
-    position: fixed;
-    z-index: 1;
-    border-radius: 5px;
-    background-color: rgb(86, 92, 100);
-    /** animation */
-    scale: 1;
-    opacity: 1;
-    translate: 0 0;
-    transition: visibility 0s, opacity 0.05s linear, scale 0.05s linear, translate 0.05s linear;
-}
-
-.context-menu-list {
-    list-style-type: none;
-}
-
-.context-menu-element {
-    margin: 0;
-    padding: 10px;
-    min-width: 110px;
-    cursor: pointer;
-    border-radius: 5px;
-    /** animation */
-    transition: all 0.15s;
-    background-color: rgba(255, 255, 255, 0);
-}
-
-.context-menu-element:hover {
-    /** animation */
-    transition: all 0.2s;
-    background-color: rgba(255, 255, 255, 0.2);
-}
-
-.context-menu-element-red {
-    background-color: #7d0e0e;
-}
-
-.context-menu-element-red:hover {
-    background-color: #a43535;
-}
-
-.context-menu-disabled {
-    visibility: hidden;
-    /** animation */
-    opacity: 0;
-    scale: 0.7;
-    translate: -30% -30%;
-    transition: all 0.1s linear, opacity 0.1s ease-out;
-}
-
 /** Sidebar */
 .sidebar-overlay {
     position: fixed;
@@ -557,45 +505,6 @@ input[type=number] {
 .actions-list button:hover {
     box-shadow: none;
     background-color: transparent;
-}
-
-.logout-button {
-    background-color: transparent;
-    background-image: url("../resources/new/logout-svgrepo-com.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: var(--ml-topbar-icon-size);
-    width: var(--ml-topbar-icon-button);
-    height: var(--ml-topbar-icon-button);
-    border: none;
-    padding: 0;
-    margin: 0;
-}
-
-.login-button {
-    background-color: transparent;
-    background-image: url("../resources/new/user.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: var(--ml-topbar-icon-size);
-    width: var(--ml-topbar-icon-button);
-    height: var(--ml-topbar-icon-button);
-    border: none;
-    padding: 0;
-    margin: 0;
-}
-
-.admin-button {
-    background-color: transparent;
-    background-image: url("../resources/new/admin-svgrepo-com.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: var(--ml-topbar-icon-size);
-    width: var(--ml-topbar-icon-button);
-    height: var(--ml-topbar-icon-button);
-    border: none;
-    padding: 0;
-    margin: 0;
 }
 
 /** Actions */
@@ -853,61 +762,3 @@ canvas.video-stream {
     transition: none;
 }
 
-/* Admin */
-.user-button {
-    background-color: transparent;
-    background-image: url("../resources/new/user.svg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: var(--ml-topbar-icon-size);
-    width: var(--ml-topbar-icon-button);
-    height: var(--ml-topbar-icon-button);
-    border: none;
-    padding: 0;
-    margin: 0;
-}
-
-.user-panel {
-    display: flex;
-    flex-direction: column;
-    max-width: 225px;
-}
-
-.user-list {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.user-element {
-    margin: 0;
-    padding: 10px;
-    min-width: 110px;
-    cursor: pointer;
-    border-radius: 5px;
-    /** animation */
-    transition: all 0.15s;
-    background-color: rgba(255, 255, 255, 0);
-}
-
-.user-element:hover {
-    /** animation */
-    transition: all 0.2s;
-    background-color: rgba(255, 255, 255, 0.2);
-}
-
-.user-element p {
-    padding: 0;
-    margin: 0;
-}
-
-.admin-panel-content {
-    display: flex;
-    flex-direction: row;
-}
-
-.user-info-delete {
-    background-color: red;
-}
