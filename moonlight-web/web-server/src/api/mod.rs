@@ -5,11 +5,9 @@ use actix_web::{
     web::{self, Data, Json},
 };
 
-use crate::{
-    app::{
-        App,
-        local::{self, LocalEnsureError, LocalFailureCode as LocalFailureKind},
-    },
+use crate::app::{
+    App,
+    local::{self, LocalEnsureError, LocalFailureCode as LocalFailureKind},
 };
 use common::api_bindings::{
     GetLocalBootstrapResponse, GetLocalStatusResponse, LocalErrorResponse, LocalFailureCode,
@@ -86,13 +84,6 @@ fn into_api_local_failure_code(value: LocalFailureKind) -> LocalFailureCode {
 
 pub fn api_service() -> impl HttpServiceFactory {
     web::scope("/api")
-        .service(services![
-            local_status,
-            local_ensure_ready,
-            local_bootstrap,
-        ])
-        .service(services![
-            stream::start_host,
-            stream::cancel_host,
-        ])
+        .service(services![local_status, local_ensure_ready, local_bootstrap,])
+        .service(services![stream::start_host, stream::cancel_host,])
 }

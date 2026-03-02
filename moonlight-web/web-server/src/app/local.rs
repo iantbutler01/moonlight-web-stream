@@ -3,7 +3,7 @@ use std::{env, sync::LazyLock};
 
 use log::{info, warn};
 use moonlight_common::PairPin;
-use tokio::time::{sleep, timeout};
+use tokio::time::{Instant, sleep, timeout};
 
 use crate::app::{
     App, AppError,
@@ -15,6 +15,7 @@ const DEFAULT_SUNSHINE_API_PORT: u16 = 47990;
 const DEFAULT_SUNSHINE_API_USERNAME: &str = "yuu";
 const DEFAULT_SUNSHINE_API_PASSWORD: &str = "yuu";
 const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
+const PIN_ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
 const PIN_RETRY_INITIAL: Duration = Duration::from_millis(100);
 const PIN_RETRY_MAX: Duration = Duration::from_secs(2);
 
@@ -242,14 +243,9 @@ async fn auto_pair_host(app: &App, host: &mut Host) -> Result<(), LocalEnsureErr
     let pair_name = app.config().moonlight.pair_device_name.clone();
     let sunshine_port = app.config().moonlight.default_http_port;
 
-    let pin_task = tokio::spawn(async move {
-        submit_sunshine_pin_loop(pin_text, pair_name, sunshine_port).await;
-    });
+    submit_sunshine_pin_until_accepted(pin_text, pair_name, sunshine_port).await?;
 
     let pair_result = timeout(PAIR_TIMEOUT, host.pair(pin)).await;
-    pin_task.abort();
-    let _ = pin_task.await;
-
     match pair_result {
         Ok(Ok(())) | Ok(Err(AppError::HostPaired)) => {
             info!("local stream pairing success");
@@ -276,7 +272,11 @@ async fn auto_pair_host(app: &App, host: &mut Host) -> Result<(), LocalEnsureErr
     }
 }
 
-async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
+async fn submit_sunshine_pin_until_accepted(
+    pin: String,
+    name: String,
+    port: u16,
+) -> Result<(), LocalEnsureError> {
     let client = match reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(1))
         .timeout(Duration::from_secs(2))
@@ -286,13 +286,22 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
         Ok(client) => client,
         Err(error) => {
             warn!("failed to build sunshine pin client: {error}");
-            return;
+            return Err(LocalEnsureError::new(
+                LocalFailureCode::PairingFailed,
+                "Automatic pairing failed.",
+                Some(format!("failed to build sunshine pin client: {error}")),
+                true,
+            ));
         }
     };
-    let pin_url = format!("https://{LOCAL_SUNSHINE_ADDRESS}:{}/api/pin", *SUNSHINE_API_PORT);
+    let pin_url = format!(
+        "https://{LOCAL_SUNSHINE_ADDRESS}:{}/api/pin",
+        *SUNSHINE_API_PORT
+    );
 
+    let deadline = Instant::now() + PIN_ACCEPT_TIMEOUT;
     let mut delay = PIN_RETRY_INITIAL;
-    loop {
+    while Instant::now() < deadline {
         let response = client
             .post(&pin_url)
             .basic_auth(
@@ -313,19 +322,13 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
                 if sunshine_pin_accepted(&body) {
                     info!(
                         "sunshine /api/pin accepted pairing pin (api_port={} host_port={})",
-                        *SUNSHINE_API_PORT,
-                        port
+                        *SUNSHINE_API_PORT, port
                     );
-                    // Stop posting once Sunshine accepts the PIN. Re-submitting can reset the
-                    // pairing state and race against the in-flight Moonlight pair handshake.
-                    return;
+                    return Ok(());
                 }
                 warn!(
                     "sunshine /api/pin returned {} but pairing not yet accepted body={} (api_port={} host_port={})",
-                    status,
-                    body,
-                    *SUNSHINE_API_PORT,
-                    port
+                    status, body, *SUNSHINE_API_PORT, port
                 );
             }
             Ok(value) => {
@@ -339,8 +342,7 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
             Err(error) => {
                 warn!(
                     "sunshine /api/pin request failed (api_port={} host_port={}): {error}",
-                    *SUNSHINE_API_PORT,
-                    port
+                    *SUNSHINE_API_PORT, port
                 );
             }
         }
@@ -348,6 +350,13 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
         sleep(delay).await;
         delay = delay.saturating_mul(2).min(PIN_RETRY_MAX);
     }
+
+    Err(LocalEnsureError::new(
+        LocalFailureCode::PairingFailed,
+        "Automatic pairing failed.",
+        Some("sunshine did not accept pairing pin before timeout".to_string()),
+        true,
+    ))
 }
 
 fn sunshine_pin_accepted(body: &str) -> bool {
