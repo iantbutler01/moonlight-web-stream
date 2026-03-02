@@ -401,6 +401,8 @@ pub enum LogMessageType {
 pub enum StreamServerMessage {
     Setup {
         ice_servers: Vec<RtcIceServer>,
+        force_relay: bool,
+        allow_websocket_fallback: bool,
     },
     WebRtc(StreamSignalingMessage),
     // Optional Info

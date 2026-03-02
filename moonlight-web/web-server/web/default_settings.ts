@@ -35,7 +35,7 @@ const trueDefaultSettings: Settings =
         "sendIntervalOverride": null
     },
     // possible values: "auto", "webrtc", "websocket"
-    "dataTransport": "auto",
+    "dataTransport": "webrtc",
     "toggleFullscreenWithKeybind": false,
     // possible values: "standard", "old"
     "pageStyle": "standard",

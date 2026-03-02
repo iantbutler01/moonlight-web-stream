@@ -213,6 +213,8 @@ async fn main() {
     ipc_sender
         .send(StreamerIpcMessage::WebSocket(StreamServerMessage::Setup {
             ice_servers: connection.config.webrtc.ice_servers.clone(),
+            force_relay: connection.config.webrtc.force_relay,
+            allow_websocket_fallback: connection.config.webrtc.allow_websocket_fallback,
         }))
         .await;
 

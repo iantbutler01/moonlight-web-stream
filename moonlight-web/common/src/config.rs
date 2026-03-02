@@ -104,6 +104,10 @@ pub struct WebRtcConfig {
     pub network_types: Vec<WebRtcNetworkType>,
     #[serde(default = "default_include_loopback_candidates")]
     pub include_loopback_candidates: bool,
+    #[serde(default = "default_force_relay")]
+    pub force_relay: bool,
+    #[serde(default = "default_allow_websocket_fallback")]
+    pub allow_websocket_fallback: bool,
 }
 
 impl Default for WebRtcConfig {
@@ -114,6 +118,8 @@ impl Default for WebRtcConfig {
             nat_1to1: None,
             network_types: default_network_types(),
             include_loopback_candidates: default_include_loopback_candidates(),
+            force_relay: default_force_relay(),
+            allow_websocket_fallback: default_allow_websocket_fallback(),
         }
     }
 }
@@ -222,6 +228,12 @@ fn default_network_types() -> Vec<WebRtcNetworkType> {
 }
 fn default_include_loopback_candidates() -> bool {
     true
+}
+fn default_force_relay() -> bool {
+    false
+}
+fn default_allow_websocket_fallback() -> bool {
+    false
 }
 
 // -- Web Server Config

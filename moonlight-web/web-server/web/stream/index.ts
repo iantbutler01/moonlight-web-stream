@@ -92,6 +92,8 @@ export class Stream implements Component {
 
     private ws: WebSocket
     private iceServers: Array<RTCIceServer> | null = null
+    private forceRelay = false
+    private allowWebSocketFallback = false
 
     private videoRenderer: VideoRenderer | null = null
     private audioPlayer: AudioPlayer | null = null
@@ -235,14 +237,18 @@ export class Stream implements Component {
         }
         // -- WebRTC Config
         else if ("Setup" in message) {
-            const iceServers = message.Setup.ice_servers
+            const setup = message.Setup
+            const iceServers = setup.ice_servers
 
             this.iceServers = iceServers
+            this.forceRelay = setup.force_relay
+            this.allowWebSocketFallback = setup.allow_websocket_fallback
 
             this.debugLog(`window.isSecureContext: ${window.isSecureContext}`)
             this.debugLog(`Using WebRTC Ice Servers: ${createPrettyList(
                 iceServers.map(server => server.urls).reduce((list, url) => list.concat(url), [])
             )}`)
+            this.debugLog(`WebRTC policy: forceRelay=${this.forceRelay} allowWebSocketFallback=${this.allowWebSocketFallback}`)
 
             await this.startConnection()
         }
@@ -258,22 +264,38 @@ export class Stream implements Component {
     }
 
     async startConnection() {
-        this.debugLog(`Using transport: ${this.settings.dataTransport}`)
+        let transportMode = this.settings.dataTransport
+        if (!this.allowWebSocketFallback && transportMode != "webrtc") {
+            this.debugLog(
+                `Overriding transport "${transportMode}" -> "webrtc" because websocket fallback is disabled`,
+            )
+            transportMode = "webrtc"
+        }
 
-        if (this.settings.dataTransport == "auto") {
-            let shutdownReason = await this.tryWebRTCTransport()
+        this.debugLog(`Using transport: ${transportMode}`)
 
+        if (transportMode == "auto") {
+            const shutdownReason = await this.tryWebRTCTransport()
             if (shutdownReason == "failednoconnect") {
                 this.debugLog("Failed to establish WebRTC connection. Falling back to Web Socket transport.", { type: "ifErrorDescription" })
                 await this.tryWebSocketTransport()
             }
-        } else if (this.settings.dataTransport == "webrtc") {
-            await this.tryWebRTCTransport()
-        } else if (this.settings.dataTransport == "websocket") {
-            await this.tryWebSocketTransport()
+            return
         }
 
-        this.debugLog("Tried all configured transport options but no connection was possible", { type: "fatal" })
+        if (transportMode == "websocket") {
+            if (!this.allowWebSocketFallback) {
+                this.debugLog("Web Socket transport is disabled for this environment", { type: "fatalDescription" })
+                return
+            }
+            await this.tryWebSocketTransport()
+            return
+        }
+
+        const shutdownReason = await this.tryWebRTCTransport()
+        if (shutdownReason == "failednoconnect") {
+            this.debugLog("Failed to establish WebRTC connection.", { type: "fatalDescription" })
+        }
     }
 
     private transport: Transport | null = null
@@ -401,20 +423,29 @@ export class Stream implements Component {
             this.debugLog(`Failed to try WebRTC Transport: no ice servers available`)
             return "failednoconnect"
         }
+        if (this.forceRelay && !hasRelayIceServer(this.iceServers)) {
+            this.debugLog("Relay-only mode requires at least one TURN server in ice_servers.", {
+                type: "fatalDescription",
+            })
+            return "failednoconnect"
+        }
 
         const transport = new WebRTCTransport(this.logger)
         transport.onsendmessage = (message) => this.sendWsMessage({ WebRtc: message })
 
-        transport.initPeer({
-            iceServers: this.iceServers
-        })
-        this.setTransport(transport)
-
-        // Wait for negotiation
-        const result = await (new Promise((resolve, _reject) => {
+        const negotiationResult = new Promise<boolean>((resolve) => {
             transport.onconnect = () => resolve(true)
             transport.onclose = () => resolve(false)
-        }))
+        })
+
+        this.setTransport(transport)
+        await transport.initPeer({
+            iceServers: this.iceServers,
+            iceTransportPolicy: this.forceRelay ? "relay" : "all",
+        })
+
+        // Wait for negotiation
+        const result = await negotiationResult
         this.debugLog(`WebRTC negotiation success: ${result}`)
 
         if (!result) {
@@ -448,7 +479,7 @@ export class Stream implements Component {
             }
         })
     }
-    private async tryWebSocketTransport() {
+    private async tryWebSocketTransport(): Promise<TransportShutdown> {
         this.debugLog("Trying Web Socket transport")
 
         this.sendWsMessage({
@@ -462,12 +493,12 @@ export class Stream implements Component {
         const videoCodecSupport = await this.createPipelines()
         if (!videoCodecSupport) {
             this.debugLog("Failed to start stream because no video pipeline with support for the specified codec was found!", { type: "fatalDescription" })
-            return
+            return "failednoconnect"
         }
 
         await this.startStream(videoCodecSupport)
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve, _reject) => {
             transport.onclose = (shutdown) => {
                 resolve(shutdown)
             }
@@ -760,4 +791,15 @@ function createPrettyList(list: Array<string>): string {
     text += "]"
 
     return text
+}
+
+function hasRelayIceServer(servers: Array<RTCIceServer>): boolean {
+    return servers.some((server) => {
+        const rawUrls = server.urls
+        if (rawUrls == null) {
+            return false
+        }
+        const urls = Array.isArray(rawUrls) ? rawUrls : [rawUrls]
+        return urls.some((url) => typeof url == "string" && (url.startsWith("turn:") || url.startsWith("turns:")))
+    })
 }

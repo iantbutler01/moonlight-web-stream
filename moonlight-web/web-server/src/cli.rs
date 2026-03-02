@@ -81,6 +81,12 @@ pub struct CliConfig {
     /// Overwrites `webrtc.include_loopback_candidates`.
     #[arg(long, env = "WEBRTC_INCLUDE_LOOPBACK_CANDIDATES")]
     pub webrtc_include_loopback_candidates: Option<bool>,
+    /// Overwrites `webrtc.force_relay`.
+    #[arg(long, env = "WEBRTC_FORCE_RELAY")]
+    pub webrtc_force_relay: Option<bool>,
+    /// Overwrites `webrtc.allow_websocket_fallback`.
+    #[arg(long, env = "WEBRTC_ALLOW_WEBSOCKET_FALLBACK")]
+    pub webrtc_allow_websocket_fallback: Option<bool>,
     /// Overwrites `web_server.bind_address`.
     #[arg(long, env = "BIND_ADDRESS")]
     pub bind_address: Option<SocketAddr>,
@@ -130,6 +136,12 @@ impl CliConfig {
         }
         if let Some(webrtc_include_loopback_candidates) = self.webrtc_include_loopback_candidates {
             config.webrtc.include_loopback_candidates = webrtc_include_loopback_candidates;
+        }
+        if let Some(webrtc_force_relay) = self.webrtc_force_relay {
+            config.webrtc.force_relay = webrtc_force_relay;
+        }
+        if let Some(webrtc_allow_websocket_fallback) = self.webrtc_allow_websocket_fallback {
+            config.webrtc.allow_websocket_fallback = webrtc_allow_websocket_fallback;
         }
         if let Some(bind_address) = self.bind_address {
             config.web_server.bind_address = bind_address;
