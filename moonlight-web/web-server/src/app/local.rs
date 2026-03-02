@@ -292,7 +292,6 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
     let pin_url = format!("https://{LOCAL_SUNSHINE_ADDRESS}:{}/api/pin", *SUNSHINE_API_PORT);
 
     let mut delay = PIN_RETRY_INITIAL;
-    let mut accepted_logged = false;
     loop {
         let response = client
             .post(&pin_url)
@@ -312,13 +311,11 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
                 let status = value.status();
                 let body = value.text().await.unwrap_or_default();
                 if sunshine_pin_accepted(&body) {
-                    if !accepted_logged {
-                        info!(
-                            "sunshine /api/pin accepted pairing pin (api_port={} host_port={})",
-                            *SUNSHINE_API_PORT,
-                            port
-                        );
-                    }
+                    info!(
+                        "sunshine /api/pin accepted pairing pin (api_port={} host_port={})",
+                        *SUNSHINE_API_PORT,
+                        port
+                    );
                     // Stop posting once Sunshine accepts the PIN. Re-submitting can reset the
                     // pairing state and race against the in-flight Moonlight pair handshake.
                     return;
