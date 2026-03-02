@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::{env, sync::LazyLock};
 
 use log::{info, warn};
 use moonlight_common::PairPin;
@@ -10,9 +11,27 @@ use crate::app::{
 };
 
 const LOCAL_SUNSHINE_ADDRESS: &str = "127.0.0.1";
+const DEFAULT_SUNSHINE_API_PORT: u16 = 47990;
+const DEFAULT_SUNSHINE_API_USERNAME: &str = "yuu";
+const DEFAULT_SUNSHINE_API_PASSWORD: &str = "yuu";
 const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
 const PIN_RETRY_INITIAL: Duration = Duration::from_millis(100);
 const PIN_RETRY_MAX: Duration = Duration::from_secs(2);
+
+static SUNSHINE_API_PORT: LazyLock<u16> = LazyLock::new(|| {
+    env::var("SUNSHINE_API_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_SUNSHINE_API_PORT)
+});
+
+static SUNSHINE_API_USERNAME: LazyLock<String> = LazyLock::new(|| {
+    env::var("SUNSHINE_API_USERNAME").unwrap_or_else(|_| DEFAULT_SUNSHINE_API_USERNAME.to_string())
+});
+
+static SUNSHINE_API_PASSWORD: LazyLock<String> = LazyLock::new(|| {
+    env::var("SUNSHINE_API_PASSWORD").unwrap_or_else(|_| DEFAULT_SUNSHINE_API_PASSWORD.to_string())
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocalFailureCode {
@@ -261,6 +280,7 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
     let client = match reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(1))
         .timeout(Duration::from_secs(2))
+        .danger_accept_invalid_certs(true)
         .build()
     {
         Ok(client) => client,
@@ -269,11 +289,16 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
             return;
         }
     };
+    let pin_url = format!("https://{LOCAL_SUNSHINE_ADDRESS}:{}/api/pin", *SUNSHINE_API_PORT);
 
     let mut delay = PIN_RETRY_INITIAL;
     loop {
         let response = client
-            .post(format!("http://{LOCAL_SUNSHINE_ADDRESS}:{port}/api/pin"))
+            .post(&pin_url)
+            .basic_auth(
+                SUNSHINE_API_USERNAME.as_str(),
+                Some(SUNSHINE_API_PASSWORD.as_str()),
+            )
             .json(&serde_json::json!({
                 "pin": &pin,
                 "name": &name,
@@ -286,10 +311,19 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
                 return;
             }
             Ok(value) => {
-                warn!("sunshine /api/pin returned {}", value.status());
+                warn!(
+                    "sunshine /api/pin returned {} (api_port={} host_port={})",
+                    value.status(),
+                    *SUNSHINE_API_PORT,
+                    port
+                );
             }
             Err(error) => {
-                warn!("sunshine /api/pin request failed: {error}");
+                warn!(
+                    "sunshine /api/pin request failed (api_port={} host_port={}): {error}",
+                    *SUNSHINE_API_PORT,
+                    port
+                );
             }
         }
 
