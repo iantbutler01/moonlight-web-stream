@@ -318,12 +318,10 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
                             *SUNSHINE_API_PORT,
                             port
                         );
-                        accepted_logged = true;
                     }
-                    // Keep submitting the same pin until host.pair completes and aborts this task.
-                    // Sunshine can acknowledge before the moonlight pair request fully advances.
-                    sleep(PIN_RETRY_INITIAL).await;
-                    continue;
+                    // Stop posting once Sunshine accepts the PIN. Re-submitting can reset the
+                    // pairing state and race against the in-flight Moonlight pair handshake.
+                    return;
                 }
                 warn!(
                     "sunshine /api/pin returned {} but pairing not yet accepted body={} (api_port={} host_port={})",
