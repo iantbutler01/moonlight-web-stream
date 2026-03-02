@@ -308,7 +308,23 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
 
         match response {
             Ok(value) if value.status().is_success() => {
-                return;
+                let status = value.status();
+                let body = value.text().await.unwrap_or_default();
+                if sunshine_pin_accepted(&body) {
+                    info!(
+                        "sunshine /api/pin accepted pairing pin (api_port={} host_port={})",
+                        *SUNSHINE_API_PORT,
+                        port
+                    );
+                    return;
+                }
+                warn!(
+                    "sunshine /api/pin returned {} but pairing not yet accepted body={} (api_port={} host_port={})",
+                    status,
+                    body,
+                    *SUNSHINE_API_PORT,
+                    port
+                );
             }
             Ok(value) => {
                 warn!(
@@ -329,6 +345,17 @@ async fn submit_sunshine_pin_loop(pin: String, name: String, port: u16) {
 
         sleep(delay).await;
         delay = delay.saturating_mul(2).min(PIN_RETRY_MAX);
+    }
+}
+
+fn sunshine_pin_accepted(body: &str) -> bool {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    match json.get("status") {
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(serde_json::Value::String(value)) => value.eq_ignore_ascii_case("true"),
+        _ => false,
     }
 }
 
