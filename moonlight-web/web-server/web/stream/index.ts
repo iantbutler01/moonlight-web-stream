@@ -461,7 +461,9 @@ export class Stream implements Component {
             return "failednoconnect"
         }
 
-        const transport = new WebRTCTransport(this.logger)
+        const transport = new WebRTCTransport(this.logger, {
+            relayOnlyCandidates: this.forceRelay,
+        })
         transport.onsendmessage = (message) => this.sendWsMessage({ WebRtc: message })
 
         const negotiationResult = new Promise<boolean>((resolve) => {

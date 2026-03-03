@@ -10,9 +10,23 @@ export class WebRTCTransport implements Transport {
     private logger: Logger | null
 
     private peer: RTCPeerConnection | null = null
+    private relayOnlyCandidates = false
 
-    constructor(logger?: Logger) {
+    constructor(
+        logger?: Logger,
+        options?: {
+            relayOnlyCandidates?: boolean
+        }
+    ) {
         this.logger = logger ?? null
+        this.relayOnlyCandidates = options?.relayOnlyCandidates ?? false
+    }
+
+    private isRelayCandidate(candidate?: string | null): boolean {
+        if (!candidate) {
+            return false
+        }
+        return /\btyp\s+relay\b/i.test(candidate)
     }
 
     private sanitizePeerConfiguration(configuration?: RTCConfiguration) {
@@ -167,6 +181,10 @@ export class WebRTCTransport implements Transport {
     private onIceCandidate(event: RTCPeerConnectionIceEvent) {
         if (event.candidate) {
             const candidate = event.candidate.toJSON()
+            if (this.relayOnlyCandidates && !this.isRelayCandidate(candidate.candidate)) {
+                this.logger?.debug(`Dropping non-relay local ice candidate: ${candidate.candidate}`)
+                return
+            }
             this.logger?.debug(`Sending ice candidate: ${candidate.candidate}`)
 
             this.sendMessage({
@@ -184,6 +202,10 @@ export class WebRTCTransport implements Transport {
 
     private iceCandidates: Array<RTCIceCandidateInit> = []
     private async addIceCandidate(candidate: RTCIceCandidateInit) {
+        if (this.relayOnlyCandidates && !this.isRelayCandidate(candidate.candidate)) {
+            this.logger?.debug(`Dropping non-relay remote ice candidate: ${candidate.candidate}`)
+            return
+        }
         this.logger?.debug(`Received ice candidate: ${candidate.candidate}`)
 
         if (!this.peer) {
