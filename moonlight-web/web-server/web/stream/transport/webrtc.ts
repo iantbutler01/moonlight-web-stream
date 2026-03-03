@@ -15,6 +15,29 @@ export class WebRTCTransport implements Transport {
         this.logger = logger ?? null
     }
 
+    private sanitizePeerConfiguration(configuration?: RTCConfiguration) {
+        const iceServers = (configuration?.iceServers ?? []).map((server) => {
+            const urls = Array.isArray(server.urls)
+                ? server.urls
+                : server.urls
+                  ? [server.urls]
+                  : []
+            return {
+                urls,
+                has_username: !!server.username,
+                has_credential: !!server.credential,
+            }
+        })
+
+        return {
+            bundlePolicy: configuration?.bundlePolicy ?? "balanced",
+            rtcpMuxPolicy: configuration?.rtcpMuxPolicy ?? "require",
+            iceTransportPolicy: configuration?.iceTransportPolicy ?? "all",
+            iceCandidatePoolSize: configuration?.iceCandidatePoolSize ?? 0,
+            iceServers,
+        }
+    }
+
     async initPeer(configuration?: RTCConfiguration) {
         this.logger?.debug(`Creating Client Peer`)
 
@@ -24,6 +47,10 @@ export class WebRTCTransport implements Transport {
         }
 
         // Configure web rtc
+        const sanitizedConfiguration = this.sanitizePeerConfiguration(configuration)
+        this.logger?.debug(
+            `Effective RTCPeerConnection config: ${JSON.stringify(sanitizedConfiguration)}`
+        )
         this.peer = new RTCPeerConnection(configuration)
         this.peer.addEventListener("error", this.onError.bind(this))
 

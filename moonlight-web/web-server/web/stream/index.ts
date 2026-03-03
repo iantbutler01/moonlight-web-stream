@@ -244,10 +244,15 @@ export class Stream implements Component {
             this.forceRelay = setup.force_relay
             this.allowWebSocketFallback = setup.allow_websocket_fallback
 
+            const allIceUrls = iceServers.map(server => server.urls).reduce((list, url) => list.concat(url), [])
+            const relayCount = allIceUrls.filter(url => url.toLowerCase().startsWith("turn:")).length
+            const stunCount = allIceUrls.filter(url => url.toLowerCase().startsWith("stun:")).length
+
             this.debugLog(`window.isSecureContext: ${window.isSecureContext}`)
-            this.debugLog(`Using WebRTC Ice Servers: ${createPrettyList(
-                iceServers.map(server => server.urls).reduce((list, url) => list.concat(url), [])
-            )}`)
+            this.debugLog(
+                `Bootstrap ICE summary: servers=${iceServers.length} urls=${allIceUrls.length} turn_urls=${relayCount} stun_urls=${stunCount}`
+            )
+            this.debugLog(`Using WebRTC Ice Servers: ${createPrettyList(allIceUrls)}`)
             this.debugLog(`WebRTC policy: forceRelay=${this.forceRelay} allowWebSocketFallback=${this.allowWebSocketFallback}`)
 
             await this.startConnection()
