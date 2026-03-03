@@ -80,6 +80,8 @@ export class StreamInput {
     private controllerInputs: Array<DataTransportChannel | null> = []
 
     private touchSupported: boolean | null = null
+    private onTouchDataHandler = this.onTouchData.bind(this)
+    private onControllerDataHandler = this.onControllerData.bind(this)
 
     constructor(config?: StreamInputConfig) {
         this.config = defaultStreamInputConfig()
@@ -103,16 +105,16 @@ export class StreamInput {
         this.mouseRelative = this.getDataChannel(transport, TransportChannelId.MOUSE_RELATIVE)
 
         if (this.touch) {
-            this.touch.removeReceiveListener(this.onTouchData.bind(this))
+            this.touch.removeReceiveListener(this.onTouchDataHandler)
         }
         this.touch = this.getDataChannel(transport, TransportChannelId.TOUCH)
-        this.touch.addReceiveListener(this.onTouchData.bind(this))
+        this.touch.addReceiveListener(this.onTouchDataHandler)
 
         if (this.controllers) {
-            this.controllers.removeReceiveListener(this.onTouchData.bind(this))
+            this.controllers.removeReceiveListener(this.onControllerDataHandler)
         }
         this.controllers = this.getDataChannel(transport, TransportChannelId.CONTROLLERS)
-        this.controllers.addReceiveListener(this.onControllerData.bind(this))
+        this.controllers.addReceiveListener(this.onControllerDataHandler)
 
         this.controllerInputs.length = 0
         for (let i = 0; i < 16; i++) {

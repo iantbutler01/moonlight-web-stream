@@ -11,8 +11,10 @@ export class WebSocketTransport implements Transport {
     private logger: Logger | null = null
     private ws: WebSocket
     private buffer: ByteBuffer
+    private closeHandler: (event: CloseEvent) => void
 
     private channels: Array<TransportChannel> = []
+    private dataChannels: Array<WebSocketDataTransportChannel> = []
 
     constructor(ws: WebSocket, buffer: ByteBuffer, logger: Logger | null) {
         if (logger) {
@@ -25,13 +27,16 @@ export class WebSocketTransport implements Transport {
         // Very important, set the binary type to arraybuffer
         this.ws.binaryType = "arraybuffer"
 
-        this.ws.addEventListener("close", this.onWsClose.bind(this))
+        this.closeHandler = this.onWsClose.bind(this)
+        this.ws.addEventListener("close", this.closeHandler)
 
         for (const keyRaw in TransportChannelId) {
             const key = keyRaw as TransportChannelIdKey
             const id = TransportChannelId[key]
 
-            this.channels[id] = new WebSocketDataTransportChannel(this.ws, id, this.buffer)
+            const channel = new WebSocketDataTransportChannel(this.ws, id, this.buffer)
+            this.channels[id] = channel
+            this.dataChannels.push(channel)
         }
     }
 
@@ -62,9 +67,12 @@ export class WebSocketTransport implements Transport {
         }
     }
     async close(): Promise<void> {
-        // do nothing, we don't own this ws, the stream owns the ws
-        // -> maybe we changed protocol
-        this.logger?.debug("Web Socket transport close called, not closing Web Socket because it might still be needed")
+        for (const channel of this.dataChannels) {
+            channel.close()
+        }
+        this.ws.removeEventListener("close", this.closeHandler)
+        // We do not close the underlying ws here: Stream owns connection lifecycle.
+        this.logger?.debug("Web Socket transport close called; detached listeners")
     }
     async getStats(): Promise<Record<string, StatValue>> {
         return {}
@@ -78,13 +86,15 @@ class WebSocketDataTransportChannel implements DataTransportChannel {
     private ws: WebSocket
     private id: TransportChannelIdValue
     private buffer: ByteBuffer
+    private messageHandler: (event: MessageEvent) => void
 
     constructor(ws: WebSocket, id: TransportChannelIdValue, buffer: ByteBuffer) {
         this.ws = ws
         this.id = id
         this.buffer = buffer
+        this.messageHandler = this.onMessage.bind(this)
 
-        this.ws.addEventListener("message", this.onMessage.bind(this))
+        this.ws.addEventListener("message", this.messageHandler)
     }
 
     canReceive: boolean = true
@@ -140,6 +150,6 @@ class WebSocketDataTransportChannel implements DataTransportChannel {
     }
 
     close() {
-        this.ws.removeEventListener("message", this.onMessage.bind(this))
+        this.ws.removeEventListener("message", this.messageHandler)
     }
 }

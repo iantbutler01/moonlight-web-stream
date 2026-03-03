@@ -299,18 +299,25 @@ export class Stream implements Component {
     }
 
     private transport: Transport | null = null
+    private transportCoreChannelsBound = false
 
-    private setTransport(transport: Transport) {
-        if (this.transport) {
-            this.transport.close()
+    private bindTransportCoreChannels(): boolean {
+        if (!this.transport || this.transportCoreChannelsBound) {
+            return true
         }
 
-        this.transport = transport
+        let rtt
+        let generalChannel
+        try {
+            rtt = this.transport.getChannel(TransportChannelId.RTT)
+            generalChannel = this.transport.getChannel(TransportChannelId.GENERAL)
+        } catch (error) {
+            this.debugLog(`Transport channels not ready yet: ${error}`)
+            return false
+        }
 
-        this.input.setTransport(this.transport)
-        this.stats.setTransport(this.transport)
+        this.transportCoreChannelsBound = true
 
-        const rtt = this.transport.getChannel(TransportChannelId.RTT)
         if (rtt.type == "data") {
             rtt.addReceiveListener((data) => {
                 const buffer = new ByteBuffer(data.byteLength)
@@ -327,7 +334,6 @@ export class Stream implements Component {
         }
 
         // Setup GENERAL channel listener for HDR mode updates
-        const generalChannel = this.transport.getChannel(TransportChannelId.GENERAL)
         this.debugLog(`[GENERAL] Setting up GENERAL channel listener, type=${generalChannel.type}`)
         if (generalChannel.type === "data") {
             generalChannel.addReceiveListener((data: ArrayBuffer) => {
@@ -337,6 +343,26 @@ export class Stream implements Component {
         } else {
             this.debugLog(`[GENERAL] Cannot register listener, channel type is not 'data'`)
         }
+
+        return true
+    }
+
+    private setTransport(transport: Transport, deferChannelConsumers: boolean = false) {
+        if (this.transport && this.transport !== transport) {
+            this.transport.close()
+        }
+
+        this.transport = transport
+        this.transportCoreChannelsBound = false
+
+        if (deferChannelConsumers) {
+            return
+        }
+
+        this.input.setTransport(this.transport)
+        this.stats.setTransport(this.transport)
+
+        this.bindTransportCoreChannels()
     }
 
     private onGeneralChannelMessage(data: ArrayBuffer) {
@@ -438,7 +464,7 @@ export class Stream implements Component {
             transport.onclose = () => resolve(false)
         })
 
-        this.setTransport(transport)
+        this.setTransport(transport, true)
         await transport.initPeer({
             iceServers: this.iceServers,
             iceTransportPolicy: this.forceRelay ? "relay" : "all",
@@ -449,6 +475,13 @@ export class Stream implements Component {
         this.debugLog(`WebRTC negotiation success: ${result}`)
 
         if (!result) {
+            return "failednoconnect"
+        }
+
+        this.setTransport(transport)
+        if (!this.bindTransportCoreChannels()) {
+            this.debugLog("WebRTC channels were not ready after peer negotiation", { type: "fatalDescription" })
+            await transport.close()
             return "failednoconnect"
         }
 
